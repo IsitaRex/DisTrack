@@ -17,3 +17,13 @@ git clone https://github.com/yourusername/DisTrackted.git
 cd DisTrackted
 pip install -r requirements.txt
 ```
+
+# Results
+
+## Distribution Matching
+|  |AUDIO MNIST | Bird Detection | GTZAN | 
+ :-: | :-: | :-: | :-: |
+| 1 samples/cls  |0.4|  | |
+| 10 samples/cls |0.6 |  | | 
+| 50 samples/cls |  |  | | 
+
