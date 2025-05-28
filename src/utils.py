@@ -339,6 +339,14 @@ def info_nce_loss(anchor, positive, negatives, device, temperature=0.1):
 
     return loss
 
-def sample_class_data(class_id, num_samples, class_indices, all_real_data):
-    sampled_indices = np.random.permutation(class_indices[class_id])[:num_samples]
+def sample_class_data(class_id, num_samples, indices_class, all_real_data):
+    sampled_indices = np.random.permutation(indices_class[class_id])[:num_samples]
+    return all_real_data[sampled_indices]
+
+def sample_negative_samples(class_id, num_samples, indices_class, all_real_data):
+    # Collect indices from all classes except the specified class_id
+    negative_indices = [idx for cls, indices in enumerate(indices_class) if cls != class_id for idx in indices]
+    # Randomly sample the required number of indices
+    sampled_indices = np.random.choice(negative_indices, size=num_samples, replace=False)
+    # Return the sampled data points
     return all_real_data[sampled_indices]
