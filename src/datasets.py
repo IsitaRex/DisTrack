@@ -1,6 +1,7 @@
 import os
 import torch
 import torchaudio
+import csv
 from torch.utils.data import Dataset
 from torchvision import datasets, transforms
 
@@ -158,7 +159,85 @@ class AudioMNISTDataset(Dataset):
     
     def __len__(self):
         return len(self.file_list)
+
+class BirdDataset(Dataset):
+    def __init__(self, root_dir: str, split="train", train_size=0.80, sample_rate=16000, chunk_size=128):
+        self.root_dir = root_dir
+        self.file_list = []
+        self.label_list = []
+        self.chunk_size = chunk_size
+        label_dict = {}
+
+        with open(f'{root_dir}/warblrb10k_public_metadata_2018.csv', mode='r') as csv_file:
+            csv_reader = csv.DictReader(csv_file)
+            for row in csv_reader:
+                itemid = row['itemid']
+                hasbird = row['hasbird']
+                label_dict[itemid] = hasbird
+
+        self.sample_rate = sample_rate
+        for dirname, _, filenames in os.walk(root_dir):
+            for filename in filenames:
+                if filename[-3:] == "wav":
+                    self.file_list.append(os.path.join(dirname, filename))
+                    self.label_list.append(int(label_dict[filename[:-4]]))
+        
+        self.transform = torchaudio.transforms.MelSpectrogram(
+            sample_rate=self.sample_rate,
+            n_fft=2048,
+            hop_length=512
+        )
+        
+        total_len = len(self.file_list)
+        
+        if split == 'train':
+            self.file_list, self.label_list = self.file_list[:int(train_size * total_len)], self.label_list[:int(train_size * total_len)]
+        elif split == 'val':
+            self.file_list, self.label_list = self.file_list[int(train_size * total_len):], self.label_list[int(train_size * total_len):]
+
+        self.padding_max_length = 190000  # Maximum length for padding (e.g., 10 seconds at 16kHz)    
+
+    def __getitem__(self, idx):
+        chunk_idx = idx % 3
+        idx = idx // 3
+        waveform, sr = torchaudio.load(self.file_list[idx])
+        if sr != self.sample_rate:
+            resampler = torchaudio.transforms.Resample(orig_freq=sr, new_freq=self.sample_rate)
+            waveform = resampler(waveform)
+        
+        if len(waveform[0]) < self.padding_max_length:
+            # Pad with zeros to the maximum length
+            pad_length = self.padding_max_length - len(waveform[0])
+            waveform = torch.nn.functional.pad(waveform, (0, pad_length))
+
+        elif len(waveform[0]) > self.padding_max_length:
+            # Truncate to the maximum length
+            waveform = waveform[:, :self.padding_max_length]
+
+        features = self.transform(waveform)
+
+        # Convert to log scale
+        features = torch.log(features + 1e-6)
+
+        # Split into chunks
+        chunks = self._split_into_chunks(features)
+        return chunks[chunk_idx], torch.tensor(self.label_list[idx], dtype=torch.long)
     
+    def __len__(self):
+        return len(self.file_list) * 3
+
+    def _split_into_chunks(self, features):
+        """Splits the feature map into chunks of size chunk_size x chunk_size."""
+        n_frames = features.shape[2]
+        chunks = []
+        for i in range(0, n_frames, self.chunk_size):
+            chunk = features[:, :, i:i + self.chunk_size]
+            if chunk.shape[2] < self.chunk_size:
+                pad_size = self.chunk_size - chunk.shape[2]
+                chunk = torch.nn.functional.pad(chunk, (0, pad_size))
+            chunks.append(chunk)
+        return torch.stack(chunks)
+        
 def get_dataset(dataset, data_path):
     if dataset == 'MNIST':
         channel = 1
@@ -193,7 +272,17 @@ def get_dataset(dataset, data_path):
         dst_train = AudioMNISTDataset(root_dir=os.path.join(data_path, 'AUDIO_MNIST'), split = 'train')
         dst_test = AudioMNISTDataset(root_dir=os.path.join(data_path, 'AUDIO_MNIST'), split ='val')
         class_names = [str(i) for i in range(num_classes)]
-    
+    elif dataset == 'BIRD_SOUND':
+        channel = 1
+        im_size = (128, 128)
+        num_classes = 2
+        mean = [0.5]
+        std = [0.5]
+        # Load BIRD dataset manually
+        dst_train = BirdDataset(root_dir=os.path.join(data_path, 'BIRD_SOUND'), split='train')
+        dst_test = BirdDataset(root_dir=os.path.join(data_path, 'BIRD_SOUND'), split='val')
+        class_names = ['no_bird', 'bird']
+
     else:
         exit('unknown dataset: %s'%dataset)
     
@@ -211,3 +300,11 @@ class TensorDataset(Dataset):
 
     def __len__(self):
         return self.images.shape[0]
+    
+if __name__ == "__main__":
+    # load BIRD dataset
+    dataset = BirdDataset(root_dir='data/BIRD_SOUND', split='train')
+    print(f"Number of samples: {len(dataset)}")
+    for i in range(5):
+        features, label = dataset[i]
+        print(f"Sample {i}: features shape {features.shape}, label {label.item()}")

@@ -23,7 +23,7 @@ pip install -r requirements.txt
 ## Distribution Matching
 |  |AUDIO MNIST | Bird Detection | GTZAN | 
  :-: | :-: | :-: | :-: |
-| 1 samples/cls  |0.4|  | |
-| 10 samples/cls |0.6 |  | | 
+| 1 samples/cls  |0.4| 0.63 | 0.19|
+| 10 samples/cls |0.6 | 0.66 | 0.4| 
 | 50 samples/cls |  |  | | 
 

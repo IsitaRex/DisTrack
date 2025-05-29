@@ -18,7 +18,7 @@ torch.mps.empty_cache()
 def main():
 
     parser = argparse.ArgumentParser(description='Parameter Processing')
-    parser.add_argument('--dataset', type=str, default='CIFAR10', help='dataset')
+    parser.add_argument('--dataset', type=str, default='GTZAN', help='dataset')
     parser.add_argument('--model', type=str, default='ConvNet', help='model')
     parser.add_argument('--method', type=str, default='DM', help='DM/GM/TM')
     parser.add_argument('--ipc', type=int, default=10, help='image(s) per class')
@@ -33,7 +33,7 @@ def main():
     parser.add_argument('--batch_train', type=int, default=64, help='batch size for training networks')
     parser.add_argument('--data_path', type=str, default='data', help='dataset path')
     parser.add_argument('--save_path', type=str, default='result', help='path to save results')
-    parser.add_argument('--use_wandb', type=bool, default=True, help='Use wandb for logging')
+    parser.add_argument('--use_wandb', type=bool, default=False, help='Use wandb for logging')
     parser.add_argument('--use_contrastive', type=bool, default=False, help='Use contrastive loss')
     parser.add_argument('--contrastive_weight', type=float, default=0.2, help='Weight for contrastive loss')
 
