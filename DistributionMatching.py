@@ -22,18 +22,18 @@ def main():
     parser.add_argument('--model', type=str, default='ConvNet', help='model')
     parser.add_argument('--method', type=str, default='DM', help='DM/GM/TM')
     parser.add_argument('--ipc', type=int, default=10, help='image(s) per class')
-    parser.add_argument('--eval_mode', type=str, default='SS', help='eval_mode') # S: the same to training model, M: multi architectures,  W: net width, D: net depth, A: activation function, P: pooling layer, N: normalization layer,
+    # parser.add_argument('--eval_mode', type=str, default='SS', help='eval_mode') # S: the same to training model, M: multi architectures,  W: net width, D: net depth, A: activation function, P: pooling layer, N: normalization layer,
     parser.add_argument('--num_exp', type=int, default=1, help='the number of experiments')
     parser.add_argument('--num_eval', type=int, default=3, help='the number of evaluating randomly initialized models')
     parser.add_argument('--epoch_eval_train', type=int, default=100, help='epochs to train a model with synthetic data') # it can be small for speeding up with little performance drop
     parser.add_argument('--Iteration', type=int, default=1000, help='training iterations')
     parser.add_argument('--lr_img', type=float, default=2.0, help='learning rate for updating synthetic images')
     parser.add_argument('--lr_net', type=float, default=0.1, help='learning rate for updating network parameters')
-    parser.add_argument('--batch_real', type=int, default=64, help='batch size for real data')
-    parser.add_argument('--batch_train', type=int, default=64, help='batch size for training networks')
+    parser.add_argument('--batch_real', type=int, default=128, help='batch size for real data')
+    parser.add_argument('--batch_train', type=int, default=128, help='batch size for training networks')
     parser.add_argument('--data_path', type=str, default='data', help='dataset path')
     parser.add_argument('--save_path', type=str, default='result', help='path to save results')
-    parser.add_argument('--use_wandb', type=bool, default=False, help='Use wandb for logging')
+    parser.add_argument('--use_wandb', type=bool, default=True, help='Use wandb for logging')
     parser.add_argument('--use_contrastive', type=bool, default=False, help='Use contrastive loss')
     parser.add_argument('--contrastive_weight', type=float, default=0.2, help='Weight for contrastive loss')
 
@@ -64,7 +64,7 @@ def main():
             "contrastive_weight": args.contrastive_weight
         })
 
-    eval_it_pool = np.arange(0, args.Iteration+1, 500).tolist() if args.eval_mode == 'S' or args.eval_mode == 'SS' else [args.Iteration] # The list of iterations when we evaluate models and record results.
+    eval_it_pool = np.arange(0, args.Iteration+1, 500).tolist()
     channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test, testloader = get_dataset(args.dataset, args.data_path)
     model_eval_pool = [args.model]
 
@@ -83,7 +83,6 @@ def main():
         images_all = []
         labels_all = []
         indices_class = [[] for c in range(num_classes)]
-        
         images_all = [torch.unsqueeze(dst_train[i][0], dim=0) for i in range(len(dst_train))]
         labels_all = [dst_train[i][1] for i in range(len(dst_train))]
         for i, lab in enumerate(labels_all):
@@ -175,11 +174,9 @@ def main():
             if 'BN' not in args.model: # for ConvNet
                 loss = torch.tensor(0.0).to(args.device)
                 for c in range(num_classes):
-                    # img_real = get_images(c, args.batch_real)
                     img_real = sample_class_data(c, args.batch_real, indices_class, images_all)
                     
                     if args.use_contrastive:
-                        # img_real = get_images(c, args.ipc)
                         img_real = sample_class_data(c, args.ipc, indices_class, images_all)
                     
                     img_syn = image_syn[c*args.ipc:(c+1)*args.ipc].reshape((args.ipc, channel, im_size[0], im_size[1]))
@@ -205,7 +202,6 @@ def main():
                 images_syn_all = []
                 loss = torch.tensor(0.0).to(args.device)
                 for c in range(num_classes):
-                    # img_real = get_images(c, args.batch_real)
                     img_real = sample_class_data(c, args.batch_real, indices_class, images_all)
                     img_syn = image_syn[c*args.ipc:(c+1)*args.ipc].reshape((args.ipc, channel, im_size[0], im_size[1]))
 
