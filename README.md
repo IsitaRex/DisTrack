@@ -21,9 +21,15 @@ pip install -r requirements.txt
 # Results
 
 ## Distribution Matching
+
+### Training random CNN
 |  |AUDIO MNIST | UrbanSound8K | GTZAN | 
  :-: | :-: | :-: | :-: |
 | 1 samples/cls  |0.4|0.25 | 0.19|
 | 10 samples/cls |0.6 | 0.31 | 0.4| 
-| 50 samples/cls |  |  | | 
-
+### Prototype networks using random CNN as latent space
+|  |AUDIO MNIST | UrbanSound8K | GTZAN | 
+ :-: | :-: | :-: | :-: |
+| Mean of Clusters |0.59| ||
+| 1 samples/cls  |0.59| | |
+| 10 samples/cls |0.48|  | | 
