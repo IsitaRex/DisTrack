@@ -21,9 +21,9 @@ pip install -r requirements.txt
 # Results
 
 ## Distribution Matching
-|  |AUDIO MNIST | Bird Detection | GTZAN | 
+|  |AUDIO MNIST | UrbanSound8K | GTZAN | 
  :-: | :-: | :-: | :-: |
-| 1 samples/cls  |0.4| 0.63 | 0.19|
-| 10 samples/cls |0.6 | 0.66 | 0.4| 
+| 1 samples/cls  |0.4|0.25 | 0.19|
+| 10 samples/cls |0.6 | 0.31 | 0.4| 
 | 50 samples/cls |  |  | | 
 
