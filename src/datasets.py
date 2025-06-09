@@ -3,6 +3,7 @@ import torch
 import torchaudio
 import csv
 import pandas as pd
+import numpy as np
 from torch.utils.data import Dataset
 from torchvision import datasets, transforms
 
@@ -344,3 +345,28 @@ if __name__ == "__main__":
     for i in range(5):
         features, label = dataset[i]
         print(f"Sample {i}: features shape {features.shape}, label {label.item()}")
+
+
+def load_synthetic_data(path, device='cpu'):
+    """Load synthetic prototypes"""
+    data = torch.load(path, weights_only=False)
+    synth_data = data['data'][0][0].to(device)
+    synth_labels = data['data'][0][1].to(device)
+    return synth_data, synth_labels
+
+def load_real_data(dataset_class, root_dir, split, model, device='cpu', max_samples=None):
+    """Load real data and extract embeddings"""
+    dataset = dataset_class(root_dir=root_dir, split=split)
+    real_embs = []
+    real_labels = []
+    
+    for i, (data, label) in enumerate(dataset):
+        if max_samples is not None and i >= max_samples:
+            break
+        if i % 1000 == 0:
+            print(f"Processing {i}th sample")
+        emb = model.embed(data.unsqueeze(0).to(device)).detach().cpu().numpy()
+        real_embs.append(emb)
+        real_labels.append(label)
+        
+    return np.concatenate(real_embs, axis=0), np.array(real_labels)
