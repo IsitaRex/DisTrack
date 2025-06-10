@@ -118,7 +118,7 @@ class GTZANDataset(Dataset):
         return torch.stack(chunks)
 
 class AudioMNISTDataset(Dataset):
-    def __init__(self, root_dir: str, split="train", train_size=0.80, sample_rate=16000):
+    def __init__(self, root_dir: str, split="train", train_size=0.80, sample_rate=16000, hop_length=512):
         self.root_dir = root_dir
         self.file_list = []
         self.label_list = []
@@ -131,6 +131,7 @@ class AudioMNISTDataset(Dataset):
         
         self.transform = torchaudio.transforms.MelSpectrogram(
             sample_rate=self.sample_rate,
+            hop_length=hop_length,
         )
         
         total_len = len(self.file_list)
@@ -303,8 +304,8 @@ def get_dataset(dataset, data_path):
         mean = [0.5]
         std = [0.5]
         # Load GTZAN dataset manually
-        dst_train = AudioMNISTDataset(root_dir=os.path.join(data_path, 'AUDIO_MNIST'), split = 'train')
-        dst_test = AudioMNISTDataset(root_dir=os.path.join(data_path, 'AUDIO_MNIST'), split ='val')
+        dst_train = AudioMNISTDataset(root_dir=os.path.join(data_path, 'AUDIO_MNIST'), split = 'train', hop_length=512)
+        dst_test = AudioMNISTDataset(root_dir=os.path.join(data_path, 'AUDIO_MNIST'), split ='val', hop_length=512)
         class_names = [str(i) for i in range(num_classes)]
     elif dataset == 'URBANSOUND8K':
         channel = 1
