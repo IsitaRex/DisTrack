@@ -6,6 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from src.models import MLP, ConvNet, LeNet, AlexNet, AlexNetBN, VGG11, VGG11BN, ResNet18, ResNet18BN_AP, ResNet18BN
 from src.datasets import TensorDataset
+from transformers import ASTFeatureExtractor, ASTModel, ASTConfig
 
 def get_default_convnet_setting():
     net_width, net_depth, net_act, net_norm, net_pooling = 128, 3, 'relu', 'instancenorm', 'avgpooling'
@@ -83,7 +84,8 @@ def get_network(model, channel, num_classes, im_size=(32, 32)):
         net = ConvNet(channel=channel, num_classes=num_classes, net_width=net_width, net_depth=net_depth, net_act=net_act, net_norm=net_norm, net_pooling='maxpooling', im_size=im_size)
     elif model == 'ConvNetAP':
         net = ConvNet(channel=channel, num_classes=num_classes, net_width=net_width, net_depth=net_depth, net_act=net_act, net_norm=net_norm, net_pooling='avgpooling', im_size=im_size)
-
+    elif model == 'AST':
+        net = load_AST()
     else:
         net = None
         exit('unknown model: %s'%model)
@@ -353,3 +355,19 @@ def sample_negative_samples(class_id, num_samples, indices_class, all_real_data)
     sampled_indices = np.random.choice(negative_indices, size=num_samples, replace=False)
     # Return the sampled data points
     return all_real_data[sampled_indices]
+
+def load_AST():
+  config = ASTConfig(max_length=128)
+  AST_SAMPLE_RATE = 16000
+  feature_extractor = ASTFeatureExtractor.from_pretrained("MIT/ast-finetuned-audioset-10-10-0.4593", config=config)
+  feature_extractor_orig = ASTFeatureExtractor.from_pretrained("MIT/ast-finetuned-audioset-10-10-0.4593")
+  model_orig = ASTModel.from_pretrained("MIT/ast-finetuned-audioset-10-10-0.4593")
+  model = ASTModel.from_pretrained("MIT/ast-finetuned-audioset-10-10-0.4593", config=config,ignore_mismatched_sizes=True)
+  model.embeddings.position_embeddings = torch.nn.Parameter(model_orig.embeddings.position_embeddings[0,:146,:])
+
+  return model
+
+def load_AST_feature_extractor():
+  config = ASTConfig(max_length=128)
+  feature_extractor = ASTFeatureExtractor.from_pretrained("MIT/ast-finetuned-audioset-10-10-0.4593", config=config)
+  return feature_extractor

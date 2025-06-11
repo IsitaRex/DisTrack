@@ -3,3 +3,5 @@ wandb/
 __pycache__/
 result/
 synthetic_sounds/
+cache/
+.DS_Store

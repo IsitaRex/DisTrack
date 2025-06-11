@@ -10,7 +10,7 @@ import torchaudio
 import torch.nn as nn
 from torchvision.utils import save_image
 from src.datasets import get_dataset
-from src.utils import get_loops, get_network, evaluate_synset, match_loss, get_time, info_nce_loss, sample_class_data, sample_negative_samples
+from src.utils import get_loops, get_network, evaluate_synset, match_loss, get_time, info_nce_loss, sample_class_data, sample_negative_samples, load_AST_feature_extractor
 
 # Intentar importar wandb de manera segura
 #clear mps cache
@@ -21,18 +21,19 @@ def main():
     parser = argparse.ArgumentParser(description='Parameter Processing')
     parser.add_argument('--dataset', type=str, default='AUDIO_MNIST', help='dataset')
     parser.add_argument('--model', type=str, default='ConvNet', help='model')
-    parser.add_argument('--ipc', type=int, default=1, help='image(s) per class')
+    parser.add_argument('--feature', type=str, default='melspectrogram', help='Melspectrogram/MFCC/AST/')
+    parser.add_argument('--ipc', type=int, default=10, help='image(s) per class')
     parser.add_argument('--num_exp', type=int, default=1, help='the number of experiments')
     parser.add_argument('--num_eval', type=int, default=3, help='the number of evaluating randomly initialized models')
     parser.add_argument('--epoch_eval_train', type=int, default=100, help='epochs to train a model with synthetic data') # it can be small for speeding up with little performance drop
-    parser.add_argument('--Iteration', type=int, default=1000, help='training iterations')
+    parser.add_argument('--Iteration', type=int, default=400, help='training iterations')
     parser.add_argument('--lr_img', type=float, default=2.0, help='learning rate for updating synthetic images')
     parser.add_argument('--lr_net', type=float, default=0.1, help='learning rate for updating network parameters')
     parser.add_argument('--batch_real', type=int, default=64, help='batch size for real data')
     parser.add_argument('--batch_train', type=int, default=64, help='batch size for training networks')
     parser.add_argument('--data_path', type=str, default='data', help='dataset path')
     parser.add_argument('--save_path', type=str, default='result', help='path to save results')
-    parser.add_argument('--use_wandb', type=bool, default=True, help='Use wandb for logging')
+    parser.add_argument('--use_wandb', type=bool, default=False, help='Use wandb for logging')
     parser.add_argument('--use_contrastive', type=bool, default=False, help='Use contrastive loss')
     parser.add_argument('--contrastive_weight', type=float, default=0.2, help='Weight for contrastive loss')
 
@@ -63,21 +64,45 @@ def main():
             "contrastive_weight": args.contrastive_weight
         })
 
-    transform = torchaudio.transforms.MelSpectrogram(
-                      sample_rate=16000,
-                      hop_length=256
-                  ).to(args.device)
-    wav_len = 16000
-
-    eval_it_pool = np.arange(0, args.Iteration+1, 500).tolist()
-    channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test, testloader = get_dataset(args.dataset, args.data_path)
+    transform_to_spec = torchaudio.transforms.MelSpectrogram(
+                        sample_rate=16000,
+                        hop_length=256,
+                        n_fft=2048,
+                        n_mels=128
+                    ).to(args.device)
+    if args.feature in ['melspectrogram', 'AST']:
+        transform = transform_to_spec
+        
+    elif args.feature == 'MFCC':
+        transform = torchaudio.transforms.MFCC(
+                        sample_rate=16000,
+                        n_mfcc=13,
+                        melkwargs={'n_fft': 2048, 'hop_length': 256, 'n_mels': 128}
+                    ).to(args.device)
     model_eval_pool = [args.model]
+
+    if args.feature == 'AST':
+        args.model = "AST"
+        args.dataset = f"EmbeddingsDataset_{args.dataset}"
+        feature_extractor = load_AST_feature_extractor()
+
+    wav_len = 16000
+    if args.dataset == 'AUDIO_MNIST':
+        wav_len = 16000
+    elif args.dataset == 'UrbanSound8K':   
+        wav_len = 32000
+
+    eval_it_pool = np.arange(0, args.Iteration+1, 200).tolist()
+    channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test, testloader = get_dataset(args.dataset, args.data_path, args.feature)
+    
 
     accs_all_exps = dict() # record performances of all experiments
     for key in model_eval_pool:
         accs_all_exps[key] = []
 
     data_save = []
+    
+
 
     for exp in range(args.num_exp):
         print('\n================== Exp %d ==================\n '%exp)
@@ -88,8 +113,14 @@ def main():
         all_audio = []
         labels_all = []
         indices_class = [[] for c in range(num_classes)]
-        all_audio = [torch.unsqueeze(dst_train[i][0], dim=0) for i in range(len(dst_train))]
-        labels_all = [dst_train[i][1] for i in range(len(dst_train))]
+        file_name_processed_audio = f'cache/processed_audio_{args.dataset}.pt'
+        if os.path.exists(file_name_processed_audio):
+            print('Loading processed audio from %s'%file_name_processed_audio)
+            all_audio, labels_all = torch.load(file_name_processed_audio)
+        else:
+            all_audio = [torch.unsqueeze(dst_train[i][0], dim=0) for i in range(len(dst_train))] 
+            labels_all = [dst_train[i][1] for i in range(len(dst_train))]
+            torch.save((all_audio, labels_all), file_name_processed_audio)
         for i, lab in enumerate(labels_all):
             indices_class[lab].append(i)
         all_audio = torch.cat(all_audio, dim=0).to(args.device)
@@ -124,8 +155,9 @@ def main():
                     for it_eval in range(args.num_eval):
                         net_eval = get_network(model_eval, channel, num_classes, im_size).to(args.device) # get a random model
                         audio_syn_eval, label_syn_eval = copy.deepcopy(audio_syn.detach()), copy.deepcopy(label_syn.detach()) # avoid any unaware modification
+            
                         # transform audio to spectrogram
-                        audio_syn_eval = transform(audio_syn_eval)
+                        audio_syn_eval = transform_to_spec(audio_syn_eval)
                         # pad to make it im_size shape
                         if audio_syn_eval.shape[2] < im_size[1]:
                             padding = im_size[1] - audio_syn_eval.shape[2]
@@ -184,58 +216,51 @@ def main():
             loss_avg = 0
 
             ''' update synthetic data '''
-            if 'BN' not in args.model: # for ConvNet
-                loss = torch.tensor(0.0).to(args.device)
-                for c in range(num_classes):
-                    a_real = sample_class_data(c, args.batch_real, indices_class, all_audio)
-                    
-                    if args.use_contrastive:
-                        img_real = sample_class_data(c, args.ipc, indices_class, all_audio)
-                    
-                    a_syn = audio_syn[c*args.ipc:(c+1)*args.ipc]
-                    a_syn = transform(a_syn)
-                    # pad to make it im_size shape
+            loss = torch.tensor(0.0).to(args.device)
+            for c in range(num_classes):
+                a_real = sample_class_data(c, args.batch_real, indices_class, all_audio)
+                
+                if args.use_contrastive:
+                    img_real = sample_class_data(c, args.ipc, indices_class, all_audio)
+                
+                a_syn = audio_syn[c*args.ipc:(c+1)*args.ipc]
+                a_syn = transform(a_syn)
+
+                if args.feature in ['melspectrogram', 'AST']:
                     if a_syn.shape[2] < im_size[1]:
                         padding = im_size[1] - a_syn.shape[2]
                         a_syn = nn.functional.pad(a_syn, (0, padding), mode='constant', value=0)
                     a_syn = a_syn.reshape((args.ipc, channel, im_size[0], im_size[1]))
-                    
-                    if args.model == "AST":
-                        output_real = img_real.detach()
-                        output_syn = embed(a_syn.squeeze(1)).pooler_output
-                    else:
+
+                    if args.feature == 'melspectrogram':
                         output_real = embed(a_real).detach()
                         output_syn = embed(a_syn)
+                    elif args.feature == 'AST':
+                        output_real = a_real.detach()
+                        output_syn = embed(a_syn.squeeze(1)).pooler_output
 
-                    if args.use_contrastive:
-                        negative_samples = sample_negative_samples(c, args.ipc, indices_class, all_audio)
-                        output_neg = embed(negative_samples)
-                        loss += args.contrastive_weight*info_nce_loss(output_real, output_syn, output_neg, args.ipc)
-                        loss += (1 - args.contrastive_weight)*torch.sum((torch.mean(output_real, dim=0) - torch.mean(output_syn, dim=0))**2)
-                    else:
-                        loss += torch.sum((torch.mean(output_real, dim=0) - torch.mean(output_syn, dim=0))**2)
-
-
-            else: # for ConvNetBN
-                all_real_audio = []
-                all_syn_audio = []
-                loss = torch.tensor(0.0).to(args.device)
-                for c in range(num_classes):
-                    a_real = sample_class_data(c, args.batch_real, indices_class, all_audio)
-                    a_syn = audio_syn[c*args.ipc:(c+1)*args.ipc].reshape((args.ipc, channel, im_size[0], im_size[1]))
-
-
-
-                    all_real_audio.append(a_real)
-                    all_syn_audio.append(a_syn)
-
-                all_real_audio = torch.cat(all_real_audio, dim=0)
-                all_syn_audio = torch.cat(all_syn_audio, dim=0)
+                elif args.feature == 'MFCC':
+                    # compute first order and second order deltas
+                    # mfcc_first = torchaudio.functional.compute_deltas(a_syn, win_length=3)
+                    # mfcc_second = torchaudio.functional.compute_deltas(a_syn, win_length=3)
+                    # # concatenate them
+                    # a_syn = torch.cat([a_syn, mfcc_first, mfcc_second], dim=1)
+                    # compute mean accross time
+                    a_syn = torch.mean(a_syn, dim=2, keepdim=False)
+                    output_real = a_real.detach()
+                    output_syn = a_syn
                 
-                output_real = embed(all_real_audio).detach()
-                output_syn = embed(all_syn_audio)
+                # else:
+                #     output_real = embed(a_real).detach()
+                #     output_syn = embed(a_syn)
 
-                loss += torch.sum((torch.mean(output_real.reshape(num_classes, args.batch_real, -1), dim=1) - torch.mean(output_syn.reshape(num_classes, args.ipc, -1), dim=1))**2)
+                if args.use_contrastive:
+                    negative_samples = sample_negative_samples(c, args.ipc, indices_class, all_audio)
+                    output_neg = embed(negative_samples)
+                    loss += args.contrastive_weight*info_nce_loss(output_real, output_syn, output_neg, args.ipc)
+                    loss += (1 - args.contrastive_weight)*torch.sum((torch.mean(output_real, dim=0) - torch.mean(output_syn, dim=0))**2)
+                else:
+                    loss += torch.sum((torch.mean(output_real, dim=0) - torch.mean(output_syn, dim=0))**2)
 
             optimizer_img.zero_grad()
             loss.backward()
@@ -256,7 +281,7 @@ def main():
 
             if it == args.Iteration: # only record the final results
                 data_save.append([copy.deepcopy(audio_syn.detach().cpu()), copy.deepcopy(label_syn.detach().cpu())])
-                torch.save({'data': data_save, 'accs_all_exps': accs_all_exps, }, os.path.join(args.save_path, 'res_%s_%s_%s_%dwpc.pt'%('DM', args.dataset, args.model, args.ipc)))
+                torch.save({'data': data_save, 'accs_all_exps': accs_all_exps, }, os.path.join(args.save_path, 'res_%s_%s_%s_%dwpc.pt'%(args.feature.upper(), args.dataset, args.model, args.ipc)))
 
             # Memory cleanup
             del net
