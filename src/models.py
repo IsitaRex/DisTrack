@@ -211,7 +211,7 @@ class AlexNetBN(nn.Module):
 ''' VGG '''
 cfg_vgg = {
     'VGG11': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
-    'VGG13': [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
+    'VGG13': [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 'M'],
     'VGG16': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512, 'M'],
     'VGG19': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512, 'M'],
 }
@@ -494,3 +494,48 @@ def ResNet101(channel, num_classes):
 
 def ResNet152(channel, num_classes):
     return ResNet(Bottleneck, [3,8,36,3], channel=channel, num_classes=num_classes)
+
+
+class SimplifiedConvNet(nn.Module):
+    def __init__(self, channel=1, num_classes=10, net_width=128, net_depth=3, im_size=(32, 32)):
+        super(SimplifiedConvNet, self).__init__()
+
+        self.features, shape_feat = self._make_layers(channel, net_width, net_depth, im_size)
+        num_feat = shape_feat[0] * shape_feat[1] * shape_feat[2]
+        self.classifier = nn.Linear(num_feat, num_classes)
+
+    def forward(self, x):
+        out = self.features(x)
+        out = out.view(out.size(0), -1)
+        out = self.classifier(out)
+        return out
+    
+    def embed(self, x):
+        out = self.features(x)
+        out = out.view(out.size(0), -1)
+        return out
+
+    def _make_layers(self, channel, net_width, net_depth, im_size):
+        layers = []
+        in_channels = channel
+        shape_feat = [in_channels, im_size[0], im_size[1]]
+
+        for _ in range(net_depth):
+            layers.append(nn.Conv2d(in_channels, net_width, kernel_size=3, padding=1))
+            layers.append(nn.ReLU(inplace=True))
+            layers.append(nn.MaxPool2d(kernel_size=2, stride=2))
+
+            shape_feat[0] = net_width
+            shape_feat[1] //= 2
+            shape_feat[2] //= 2
+
+            in_channels = net_width
+
+        return nn.Sequential(*layers), shape_feat
+
+# Example usage
+if __name__ == '__main__':
+    model = SimplifiedConvNet(channel=1, num_classes=10, im_size=(13, 128))
+    input_tensor = torch.randn(1, 1, 128, 128)
+    output = model.embed(input_tensor)
+    print("Output shape:", output.shape)
