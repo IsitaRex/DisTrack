@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from src.models import MLP, ConvNet, LeNet, AlexNet, AlexNetBN, VGG11, VGG11BN, ResNet18, ResNet18BN_AP, ResNet18BN
+from src.models import MLP, ConvNet, LeNet, AlexNet, AlexNetBN, VGG11, VGG11BN, ResNet18, ResNet18BN_AP, ResNet18BN, SimplifiedConvNet
 from src.datasets import TensorDataset
 from transformers import ASTFeatureExtractor, ASTModel, ASTConfig
 
@@ -86,6 +86,8 @@ def get_network(model, channel, num_classes, im_size=(32, 32)):
         net = ConvNet(channel=channel, num_classes=num_classes, net_width=net_width, net_depth=net_depth, net_act=net_act, net_norm=net_norm, net_pooling='avgpooling', im_size=im_size)
     elif model == 'AST':
         net = load_AST()
+    elif model == 'SimplifiedConvNet':
+        net = SimplifiedConvNet(channel=channel, num_classes=num_classes, net_width=net_width, net_depth=net_depth, im_size=im_size)
     else:
         net = None
         exit('unknown model: %s'%model)
@@ -215,9 +217,11 @@ def epoch(mode, dataloader, net, optimizer, criterion, args, aug):
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-
-    loss_avg /= num_exp
-    acc_avg /= num_exp
+    try:
+        loss_avg /= num_exp
+        acc_avg /= num_exp
+    except:
+        breakpoint()
 
     return loss_avg, acc_avg
 
@@ -236,11 +240,9 @@ def evaluate_synset(it_eval, net, images_train, labels_train, testloader, args):
     start = time.time()
     for ep in range(Epoch+1):
         loss_train, acc_train = epoch('train', trainloader, net, optimizer, criterion, args, aug = True)
-        
         if ep in lr_schedule:
             lr *= 0.1
             optimizer = torch.optim.SGD(net.parameters(), lr=lr, momentum=0.9, weight_decay=0.0005)
-
     time_train = time.time() - start
     loss_test, acc_test = epoch('test', testloader, net, optimizer, criterion, args, aug = False)
     print('%s Evaluate_%02d: epoch = %04d train time = %d s train loss = %.6f train acc = %.4f, test acc = %.4f' % (get_time(), it_eval, Epoch, int(time_train), loss_train, acc_train, acc_test))
