@@ -150,6 +150,19 @@ class AudioMNISTDataset(Dataset):
                 n_mfcc=n_mfcc,
                 melkwargs={"n_fft": 2048, "hop_length": hop_length, "n_mels": n_mels}
             )
+        elif self.feature_type == 'combined':
+            # Use both MelSpectrogram and MFCC
+            self.spec_transform = torchaudio.transforms.MelSpectrogram(
+                sample_rate=self.sample_rate,
+                n_mels=n_mels,
+                n_fft=2048,
+                hop_length=hop_length
+            )
+            self.mfcc_transform = torchaudio.transforms.MFCC(
+                sample_rate=self.sample_rate,
+                n_mfcc=n_mfcc,
+                melkwargs={"n_fft": 2048, "hop_length": hop_length, "n_mels": n_mels}
+            )
         
         total_len = len(self.file_list)
         
@@ -157,14 +170,8 @@ class AudioMNISTDataset(Dataset):
             self.file_list, self.label_list = self.file_list[:int(train_size * total_len)], self.label_list[:int(train_size * total_len)]
         elif split == 'val':
             self.file_list, self.label_list = self.file_list[int(train_size * total_len):], self.label_list[int(train_size * total_len):]
-                    
-    def __getitem__(self, idx):
-        waveform, sr = torchaudio.load(self.file_list[idx])
-        if sr != self.sample_rate:
-            resampler = torchaudio.transforms.Resample(orig_freq=sr, new_freq=self.sample_rate)
-            waveform = resampler(waveform)
 
-        features = self.transform(waveform)
+    def __adjust_dims(self, features):
         second_dim = MNIST_MEL_SPEC[1]
         _, n_mels, time = features.shape
         
@@ -172,16 +179,23 @@ class AudioMNISTDataset(Dataset):
             # Pad with zeros
             pad = torch.zeros((1, n_mels, second_dim - time))
             features = torch.cat([features, pad], dim=2)
+
+        return features
     
-        # if self.feature_type == 'mfcc':
-        #     # compute first order and second order deltas
-        #     mfcc_first = torchaudio.functional.compute_deltas(features, win_length=3)
-        #     mfcc_second = torchaudio.functional.compute_deltas(mfcc_first, win_length=3)
-        #     # concatenate them
-        #     features = torch.cat([features, mfcc_first, mfcc_second], dim=1)
-        #     # compute mean accross time
-        #     features = torch.mean(features, dim=2, keepdim=False)
-        return features, self.label_list[idx]
+    def __getitem__(self, idx):
+        waveform, sr = torchaudio.load(self.file_list[idx])
+        if sr != self.sample_rate:
+            resampler = torchaudio.transforms.Resample(orig_freq=sr, new_freq=self.sample_rate)
+            waveform = resampler(waveform)
+        if self.feature_type == 'combined':
+            spec_features = self.__adjust_dims(self.spec_transform(waveform))
+            mfcc_features = self.__adjust_dims(self.mfcc_transform(waveform))
+            return spec_features, mfcc_features, self.label_list[idx]
+        else:
+            features = self.transform(waveform)
+            features = self.__adjust_dims(features)
+
+            return features, self.label_list[idx]
     
     def __len__(self):
         return len(self.file_list)
@@ -335,9 +349,12 @@ def get_dataset(dataset, data_path, feature_type='melspectrogram'):
         num_classes = 10
         mean = [0.5]
         std = [0.5]
-        # Load GTZAN dataset manually
-        dst_train = AudioMNISTDataset(root_dir=os.path.join(data_path, 'AUDIO_MNIST'), feature_type= feature_type, split = 'train', hop_length=512)
-        dst_test = AudioMNISTDataset(root_dir=os.path.join(data_path, 'AUDIO_MNIST'), feature_type= feature_type, split ='val', hop_length=512)
+        if feature_type == 'combined':
+            dst_train = AudioMNISTDataset(root_dir=os.path.join(data_path, 'AUDIO_MNIST'), feature_type= 'combined', split = 'train', hop_length=512)
+            dst_test = AudioMNISTDataset(root_dir=os.path.join(data_path, 'AUDIO_MNIST'), feature_type= 'melspectrogram', split ='val', hop_length=512)
+        else:
+            dst_train = AudioMNISTDataset(root_dir=os.path.join(data_path, 'AUDIO_MNIST'), feature_type= feature_type, split = 'train', hop_length=512)
+            dst_test = AudioMNISTDataset(root_dir=os.path.join(data_path, 'AUDIO_MNIST'), feature_type= feature_type, split ='val', hop_length=512)
         class_names = [str(i) for i in range(num_classes)]
     elif dataset == 'URBANSOUND8K':
         channel = 1
