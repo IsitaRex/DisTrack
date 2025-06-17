@@ -11,6 +11,8 @@ from pathlib import Path
 import pickle
 import random
 
+MNIST_MEL_SPEC = (128, 33)
+MNIST_MFCC = (13, 33)
 class GTZANDataset(Dataset):
     def __init__(self, root_dir: str, split: str = "train", sample_rate: int = 16000, feature_type: str = "melspectrogram", n_mels: int = 128, n_mfcc: int = 13, chunk_size: int = 128):
         """
@@ -163,25 +165,22 @@ class AudioMNISTDataset(Dataset):
             waveform = resampler(waveform)
 
         features = self.transform(waveform)
+        second_dim = MNIST_MEL_SPEC[1]
+        _, n_mels, time = features.shape
         
-        if self.feature_type == "melspectrogram":
-            # Current shape is [n_mels, time], we want [128, 128]
-            _, n_mels, time = features.shape
-            
-            # Option 1: Truncate or pad time dimension to 128
-            if time < 128:
-                # Pad with zeros
-                pad = torch.zeros((1, n_mels, 128 - time))
-                features = torch.cat([features, pad], dim=2)
-        
-        if self.feature_type == 'mfcc':
-            # compute first order and second order deltas
-            mfcc_first = torchaudio.functional.compute_deltas(features, win_length=3)
-            mfcc_second = torchaudio.functional.compute_deltas(mfcc_first, win_length=3)
-            # concatenate them
-            features = torch.cat([features, mfcc_first, mfcc_second], dim=1)
-            # compute mean accross time
-            features = torch.mean(features, dim=2, keepdim=False)
+        if time < second_dim:
+            # Pad with zeros
+            pad = torch.zeros((1, n_mels, second_dim - time))
+            features = torch.cat([features, pad], dim=2)
+    
+        # if self.feature_type == 'mfcc':
+        #     # compute first order and second order deltas
+        #     mfcc_first = torchaudio.functional.compute_deltas(features, win_length=3)
+        #     mfcc_second = torchaudio.functional.compute_deltas(mfcc_first, win_length=3)
+        #     # concatenate them
+        #     features = torch.cat([features, mfcc_first, mfcc_second], dim=1)
+        #     # compute mean accross time
+        #     features = torch.mean(features, dim=2, keepdim=False)
         return features, self.label_list[idx]
     
     def __len__(self):
@@ -331,13 +330,14 @@ def get_dataset(dataset, data_path, feature_type='melspectrogram'):
     
     elif dataset == 'AUDIO_MNIST':
         channel = 1
-        im_size = (128, 128)
+        im_size =  MNIST_MEL_SPEC if feature_type == 'melspectrogram' else MNIST_MFCC
+        # im_size =  MNIST_MEL_SPEC 
         num_classes = 10
         mean = [0.5]
         std = [0.5]
         # Load GTZAN dataset manually
         dst_train = AudioMNISTDataset(root_dir=os.path.join(data_path, 'AUDIO_MNIST'), feature_type= feature_type, split = 'train', hop_length=512)
-        dst_test = AudioMNISTDataset(root_dir=os.path.join(data_path, 'AUDIO_MNIST'), split ='val', hop_length=512)
+        dst_test = AudioMNISTDataset(root_dir=os.path.join(data_path, 'AUDIO_MNIST'), feature_type= feature_type, split ='val', hop_length=512)
         class_names = [str(i) for i in range(num_classes)]
     elif dataset == 'URBANSOUND8K':
         channel = 1
@@ -590,20 +590,9 @@ class EmbeddingsDataset(Dataset):
 
 if __name__ == "__main__":
 
-    dataset_subset = EmbeddingsDataset(
-        root_dir="data", 
-        dataset_name="AUDIO_MNIST", 
-        split="train", 
-        # embeddings_file = "embeddings_cache/mnist_audio_embeddings_MIT_ast-finetuned-audioset-10-10-0.4593.pkl"
-        # embedding_model="MIT/ast-finetuned-audioset-10-10-0.4593"
-    )
-    breakpoint()
-    print(f"Number of samples in AUDIO_MNIST: {len(dataset_subset)}")
-
-# if __name__ == "__main__":
-#     # load BIRD dataset
-#     dataset = UrbanSound8KDataset(root_dir='data/URBANSOUND8K', split='train', sample_rate=16000, feature_type='mfcc')
-#     print(f"Number of samples: {len(dataset)}")
-#     for i in range(5):
-#         features, label = dataset[i]
-#         print(f"Sample {i}: features shape {features.shape}, label {label.item()}")
+    dataset_subset = AudioMNISTDataset(root_dir="data/AUDIO_MNIST", split='train', feature_type='melspectrogram', hop_length=512)
+    print(f"Number of samples in subset dataset: {len(dataset_subset)}")
+    mx = 0
+    for i in range(len(dataset_subset)):
+        mx = max(mx, int(dataset_subset[i][0].shape[1]))
+    print(f"Max feature length in subset dataset: {mx}")

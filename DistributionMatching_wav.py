@@ -21,19 +21,19 @@ def main():
     parser = argparse.ArgumentParser(description='Parameter Processing')
     parser.add_argument('--dataset', type=str, default='AUDIO_MNIST', help='dataset')
     parser.add_argument('--model', type=str, default='ConvNet', help='model')
-    parser.add_argument('--feature', type=str, default='melspectrogram', help='Melspectrogram/MFCC/AST/')
+    parser.add_argument('--feature', type=str, default='melspectrogram', help='melspectrogram/mfcc/AST/')
     parser.add_argument('--ipc', type=int, default=10, help='image(s) per class')
     parser.add_argument('--num_exp', type=int, default=1, help='the number of experiments')
-    parser.add_argument('--num_eval', type=int, default=3, help='the number of evaluating randomly initialized models')
+    parser.add_argument('--num_eval', type=int, default=5, help='the number of evaluating randomly initialized models')
     parser.add_argument('--epoch_eval_train', type=int, default=100, help='epochs to train a model with synthetic data') # it can be small for speeding up with little performance drop
-    parser.add_argument('--Iteration', type=int, default=400, help='training iterations')
+    parser.add_argument('--Iteration', type=int, default=1000, help='training iterations')
     parser.add_argument('--lr_img', type=float, default=2.0, help='learning rate for updating synthetic images')
     parser.add_argument('--lr_net', type=float, default=0.1, help='learning rate for updating network parameters')
     parser.add_argument('--batch_real', type=int, default=64, help='batch size for real data')
     parser.add_argument('--batch_train', type=int, default=64, help='batch size for training networks')
     parser.add_argument('--data_path', type=str, default='data', help='dataset path')
     parser.add_argument('--save_path', type=str, default='result', help='path to save results')
-    parser.add_argument('--use_wandb', type=bool, default=False, help='Use wandb for logging')
+    parser.add_argument('--use_wandb', type=bool, default=True, help='Use wandb for logging')
     parser.add_argument('--use_contrastive', type=bool, default=False, help='Use contrastive loss')
     parser.add_argument('--contrastive_weight', type=float, default=0.2, help='Weight for contrastive loss')
 
@@ -60,25 +60,25 @@ def main():
             "epoch_eval_train": args.epoch_eval_train,
             "num_eval": args.num_eval,
             "Iteration": args.Iteration,
-            "use_contrastive": args.use_contrastive,
-            "contrastive_weight": args.contrastive_weight
+            "feature": args.feature
         })
 
     transform_to_spec = torchaudio.transforms.MelSpectrogram(
                         sample_rate=16000,
-                        hop_length=256,
+                        hop_length=512,
                         n_fft=2048,
                         n_mels=128
                     ).to(args.device)
     if args.feature in ['melspectrogram', 'AST']:
         transform = transform_to_spec
         
-    elif args.feature == 'MFCC':
+    elif args.feature == 'mfcc':
         transform = torchaudio.transforms.MFCC(
                         sample_rate=16000,
                         n_mfcc=13,
-                        melkwargs={'n_fft': 2048, 'hop_length': 256, 'n_mels': 128}
+                        melkwargs={'n_fft': 2048, 'hop_length': 512, 'n_mels': 128}
                     ).to(args.device)
+        transform_to_spec = transform
     model_eval_pool = [args.model]
 
     if args.feature == 'AST':
@@ -92,10 +92,8 @@ def main():
     elif args.dataset == 'UrbanSound8K':   
         wav_len = 32000
 
-    eval_it_pool = np.arange(0, args.Iteration+1, 200).tolist()
+    eval_it_pool = np.arange(0, args.Iteration+1, 500).tolist()
     channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test, testloader = get_dataset(args.dataset, args.data_path, args.feature)
-    
-
     accs_all_exps = dict() # record performances of all experiments
     for key in model_eval_pool:
         accs_all_exps[key] = []
@@ -113,7 +111,7 @@ def main():
         all_audio = []
         labels_all = []
         indices_class = [[] for c in range(num_classes)]
-        file_name_processed_audio = f'cache/processed_audio_{args.dataset}.pt'
+        file_name_processed_audio = f'cache/processed_audio_{args.dataset}_{args.feature}.pt'
         if os.path.exists(file_name_processed_audio):
             print('Loading processed audio from %s'%file_name_processed_audio)
             all_audio, labels_all = torch.load(file_name_processed_audio)
@@ -208,7 +206,7 @@ def main():
             for param in list(net.parameters()):
                 param.requires_grad = False
             
-            if args.model == 'ConvNet':
+            if args.model == 'ConvNet' or args.model == 'SimplifiedConvNet':
                 embed = net.module.embed if torch.cuda.device_count() > 1 else net.embed # for GPU parallel
             else:
                 embed = net
@@ -226,29 +224,29 @@ def main():
                 a_syn = audio_syn[c*args.ipc:(c+1)*args.ipc]
                 a_syn = transform(a_syn)
 
-                if args.feature in ['melspectrogram', 'AST']:
+                if args.feature in ['melspectrogram', 'AST', 'mfcc']:
                     if a_syn.shape[2] < im_size[1]:
                         padding = im_size[1] - a_syn.shape[2]
                         a_syn = nn.functional.pad(a_syn, (0, padding), mode='constant', value=0)
-                    a_syn = a_syn.reshape((args.ipc, channel, im_size[0], im_size[1]))
+                    a_syn = a_syn.reshape((args.ipc, channel, a_syn.shape[1], im_size[1]))
 
-                    if args.feature == 'melspectrogram':
+                    if args.feature in ['melspectrogram', 'mfcc']:
                         output_real = embed(a_real).detach()
                         output_syn = embed(a_syn)
                     elif args.feature == 'AST':
                         output_real = a_real.detach()
                         output_syn = embed(a_syn.squeeze(1)).pooler_output
 
-                elif args.feature == 'MFCC':
-                    # compute first order and second order deltas
-                    # mfcc_first = torchaudio.functional.compute_deltas(a_syn, win_length=3)
-                    # mfcc_second = torchaudio.functional.compute_deltas(a_syn, win_length=3)
-                    # # concatenate them
-                    # a_syn = torch.cat([a_syn, mfcc_first, mfcc_second], dim=1)
-                    # compute mean accross time
-                    a_syn = torch.mean(a_syn, dim=2, keepdim=False)
-                    output_real = a_real.detach()
-                    output_syn = a_syn
+                # elif args.feature == 'MFCC':
+                #     # compute first order and second order deltas
+                #     # mfcc_first = torchaudio.functional.compute_deltas(a_syn, win_length=3)
+                #     # mfcc_second = torchaudio.functional.compute_deltas(a_syn, win_length=3)
+                #     # # concatenate them
+                #     # a_syn = torch.cat([a_syn, mfcc_first, mfcc_second], dim=1)
+                #     # compute mean accross time
+                #     a_syn = torch.mean(a_syn, dim=2, keepdim=False)
+                #     output_real = a_real.detach()
+                #     output_syn = a_syn
                 
                 # else:
                 #     output_real = embed(a_real).detach()
