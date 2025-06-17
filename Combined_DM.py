@@ -33,17 +33,17 @@ def main():
     parser.add_argument('--data_path', type=str, default='data', help='dataset path')
     parser.add_argument('--save_path', type=str, default='result', help='path to save results')
     parser.add_argument('--use_wandb', type=bool, default=True, help='Use wandb for logging')
-    parser.add_argument('--vanilla_weight', type=float, default=0.7, help='Weight for Vanilla Loss')
-    parser.add_argument('--joint_weight', type=float, default=0.2, help='Weight for Joint Matching Loss')
+    parser.add_argument('--vanilla_weight', type=float, default=0.5, help='Weight for Vanilla Loss')
+    parser.add_argument('--joint_weight', type=float, default=0.5, help='Weight for Joint Matching Loss')
 
     args = parser.parse_args()
     args.outer_loop, args.inner_loop = get_loops(args.ipc)
     # args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    # if args.vanilla_weight + args.joint_weight > 1.0:
-    #     raise ValueError("The sum of vanilla_weight and joint_weight must be less than or equal to 1.0")
-    # if args.joint_weight < 0.0:
-    #     raise ValueError("joint_weight must be greater than or equal to 0.0")
+    if args.vanilla_weight + args.joint_weight > 1.0:
+        raise ValueError("The sum of vanilla_weight and joint_weight must be less than or equal to 1.0")
+    if args.joint_weight < 0.0:
+        raise ValueError("joint_weight must be greater than or equal to 0.0")
     
     args.modality_gap_weight = 1.0 - args.vanilla_weight - args.joint_weight
     args.device = 'mps'
@@ -245,11 +245,11 @@ def main():
                 output_syn_spec = embed_spec(spec_syn)
 
                 loss +=  args.vanilla_weight * DistillationLosses.vanilla_loss(output_real_spec, output_syn_spec)  
-                loss += (1 - args.vanilla_weight) * DistillationLosses.vanilla_loss(output_real_mfcc, output_syn_mfcc)
-            # if args.joint_weight > 0:
-            #     loss += args.joint_weight * DistillationLosses.joint_matching_loss(output_real_mfcc, output_real_spec, output_syn_mfcc, output_syn_spec)
-            # if args.modality_gap_weight > 0:
-            #     loss += args.modality_gap_weight * DistillationLosses.modality_gap_loss(output_real_mfcc, output_real_spec, output_syn_mfcc, output_syn_spec)
+                # loss += (1 - args.vanilla_weight) * DistillationLosses.vanilla_loss(output_real_mfcc, output_syn_mfcc)
+                if args.joint_weight > 0:
+                    loss += args.joint_weight * DistillationLosses.joint_matching_loss(output_real_mfcc, output_real_spec, output_syn_mfcc, output_syn_spec)
+                if args.modality_gap_weight > 0:
+                    loss += args.modality_gap_weight * DistillationLosses.modality_gap_loss(output_real_mfcc, output_real_spec, output_syn_mfcc, output_syn_spec)
 
             optimizer_img.zero_grad()
             loss.backward()
