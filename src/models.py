@@ -122,17 +122,21 @@ class SimplifiedConvNet(nn.Module):
             dummy_output = self.features(dummy_input)
             num_feat = dummy_output.view(dummy_output.size(0), -1).size(1)
         
-        self.classifier = nn.Linear(num_feat, num_classes)
+        # Add linear layer to standardize embedding size to 8192
+        self.embedding_layer = nn.Linear(num_feat, 8192)
+        self.classifier = nn.Linear(8192, num_classes)
 
     def forward(self, x):
         out = self.features(x)
         out = out.view(out.size(0), -1)
+        # out = self.embedding_layer(out)
         out = self.classifier(out)
         return out
     
     def embed(self, x):
         out = self.features(x)
         out = out.view(out.size(0), -1)
+        out = self.embedding_layer(out)
         return out
 
     def _make_layers(self, channel, net_width, net_depth):
@@ -158,14 +162,18 @@ if __name__ == '__main__':
     model = SimplifiedConvNet(channel=1, num_classes=10, im_size=(13, 128))
     input_tensor = torch.randn(1, 1, 13, 128)
     output = model(input_tensor)
+    embedding = model.embed(input_tensor)
     print("Output shape (SimplifiedConvNet):", output.shape)
+    print("Embedding shape (SimplifiedConvNet):", embedding.shape)
     
     # Test with square input
     print("\nTesting SimplifiedConvNet with square input (128, 128):")
     model_square = SimplifiedConvNet(channel=1, num_classes=10, im_size=(128, 128))
     input_tensor_square = torch.randn(1, 1, 128, 128)
     output_square = model_square(input_tensor_square)
+    embedding_square = model_square.embed(input_tensor_square)
     print("Output shape (SimplifiedConvNet):", output_square.shape)
+    print("Embedding shape (SimplifiedConvNet):", embedding_square.shape)
     
     # Print model architecture
     print("\nModel architecture:")
