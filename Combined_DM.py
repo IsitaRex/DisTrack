@@ -21,9 +21,9 @@ def main():
 
     parser = argparse.ArgumentParser(description='Parameter Processing')
     parser.add_argument('--dataset', type=str, default='AUDIO_MNIST', help='dataset')
-    parser.add_argument('--ipc', type=int, default=10, help='image(s) per class')
+    parser.add_argument('--ipc', type=int, default=1, help='image(s) per class')
     parser.add_argument('--num_exp', type=int, default=1, help='the number of experiments')
-    parser.add_argument('--num_eval', type=int, default=3, help='the number of evaluating randomly initialized models')
+    parser.add_argument('--num_eval', type=int, default=10, help='the number of evaluating randomly initialized models')
     parser.add_argument('--epoch_eval_train', type=int, default=100, help='epochs to train a model with synthetic data') # it can be small for speeding up with little performance drop
     parser.add_argument('--Iteration', type=int, default=1000, help='training iterations')
     parser.add_argument('--lr_img', type=float, default=2.0, help='learning rate for updating synthetic images')
@@ -33,8 +33,8 @@ def main():
     parser.add_argument('--data_path', type=str, default='data', help='dataset path')
     parser.add_argument('--save_path', type=str, default='result', help='path to save results')
     parser.add_argument('--use_wandb', type=bool, default=True, help='Use wandb for logging')
-    parser.add_argument('--vanilla_weight', type=float, default=0.5, help='Weight for Vanilla Loss')
-    parser.add_argument('--joint_weight', type=float, default=0.5, help='Weight for Joint Matching Loss')
+    parser.add_argument('--vanilla_weight', type=float, default=0.0, help='Weight for Vanilla Loss')
+    parser.add_argument('--joint_weight', type=float, default=0.0, help='Weight for Joint Matching Loss')
 
     args = parser.parse_args()
     args.outer_loop, args.inner_loop = get_loops(args.ipc)
@@ -67,9 +67,9 @@ def main():
             "epoch_eval_train": args.epoch_eval_train,
             "num_eval": args.num_eval,
             "Iteration": args.Iteration,
-            "vanilla_weight": args.vanilla_weight
-            # "joint_weight": args.joint_weight,
-            # "modality_gap_weight": args.modality_gap_weight
+            "vanilla_weight": args.vanilla_weight,
+            "joint_weight": args.joint_weight,
+            "modality_gap_weight": args.modality_gap_weight
         })
 
     transform_spec = torchaudio.transforms.MelSpectrogram(
