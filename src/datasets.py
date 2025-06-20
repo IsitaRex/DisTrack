@@ -13,6 +13,8 @@ import random
 
 MNIST_MEL_SPEC = (128, 33)
 MNIST_MFCC = (13, 33)
+URBANSOUND_MEL_SPEC = (128, 128)
+URBANSOUND_MFCC = (40, 128)
 class GTZANDataset(Dataset):
     def __init__(self, root_dir: str, split: str = "train", sample_rate: int = 16000, feature_type: str = "melspectrogram", n_mels: int = 128, n_mfcc: int = 13, chunk_size: int = 128):
         """
@@ -202,8 +204,8 @@ class AudioMNISTDataset(Dataset):
     
 class UrbanSound8KDataset(Dataset):
     def __init__(self, root_dir: str, split: str = "train", sample_rate: int = 16000, 
-                 feature_type: str = "melspectrogram", n_mels: int = 128, 
-                 n_mfcc: int = 13, folds=None):
+                 feature_type: str = "melspectrogram", hop_length: int = 512, n_mels: int = 128, 
+                 n_mfcc: int = 40, folds=None):
         """
         UrbanSound8K Dataset with support for MelSpectrogram and MFCC feature extraction.
 
@@ -259,24 +261,46 @@ class UrbanSound8KDataset(Dataset):
         if self.feature_type == "melspectrogram":
             self.transform = torchaudio.transforms.MelSpectrogram(
                 sample_rate=self.sample_rate,
-                n_mels=self.n_mels,
+                n_mels=n_mels,
                 n_fft=2048,
-                hop_length=512
+                hop_length=hop_length
             )
         elif self.feature_type == "mfcc":
             self.transform = torchaudio.transforms.MFCC(
                 sample_rate=self.sample_rate,
-                n_mfcc=self.n_mfcc,
-                melkwargs={"n_fft": 2048, "hop_length": 512, "n_mels": self.n_mels}
+                n_mfcc=n_mfcc,
+                melkwargs={"n_fft": 2048, "hop_length": hop_length, "n_mels": n_mels}
             )
-        else:
-            raise ValueError("Invalid feature_type. Choose 'melspectrogram' or 'mfcc'.")
+        elif self.feature_type == 'combined':
+            # Use both MelSpectrogram and MFCC
+            self.spec_transform = torchaudio.transforms.MelSpectrogram(
+                sample_rate=self.sample_rate,
+                n_mels=n_mels,
+                n_fft=2048,
+                hop_length=hop_length
+            )
+            self.mfcc_transform = torchaudio.transforms.MFCC(
+                sample_rate=self.sample_rate,
+                n_mfcc=n_mfcc,
+                melkwargs={"n_fft": 2048, "hop_length": hop_length, "n_mels": n_mels}
+            )
         
         # For padding/truncating audio files
         self.max_length = int(sample_rate * 4.09)  # Most UrbanSound8K clips are 4 seconds or less
 
     def __len__(self):
         return len(self.file_paths)  # Return 3 chunks per file
+    
+    def __adjust_dims(self, features):
+        # second_dim = MNIST_MEL_SPEC[1]
+        # _, n_mels, time = features.shape
+        
+        # if time < second_dim:
+        #     # Pad with zeros
+        #     pad = torch.zeros((1, n_mels, second_dim - time))
+        #     features = torch.cat([features, pad], dim=2)
+
+        return features
 
     def __getitem__(self, idx):
         """Loads an audio file, extracts features, and returns a tensor."""
@@ -304,21 +328,20 @@ class UrbanSound8KDataset(Dataset):
             # Truncate
             waveform = waveform[:, :self.max_length]
 
-        features = self.transform(waveform)
+        # features = self.transform(waveform)
         
-        if self.feature_type == 'mfcc':
-            # compute first order and second order deltas
-            mfcc_first = torchaudio.functional.compute_deltas(features, win_length=3)
-            mfcc_second = torchaudio.functional.compute_deltas(mfcc_first, win_length=3)
-            # concatenate them
-            features = torch.cat([features, mfcc_first, mfcc_second], dim=1)
-            # compute mean accross time
-            features = torch.mean(features, dim=2, keepdim=False)
+        if self.feature_type == 'combined':
+            spec_features = self.__adjust_dims(self.spec_transform(waveform))
+            mfcc_features = self.__adjust_dims(self.mfcc_transform(waveform))
+            return spec_features, mfcc_features, self.labels[idx]
+        else:
+            features = self.transform(waveform)
+            features = self.__adjust_dims(features)
 
-        return features, torch.tensor(label, dtype=torch.long)
+            return features, self.labels[idx]
     
         return torch.stack(chunks)
-def get_dataset(dataset, data_path, feature_type='melspectrogram'):
+def get_dataset(dataset, data_path, feature_type='melspectrogram', batch_size=256):
     if dataset == 'MNIST':
         channel = 1
         im_size = (28, 28)
@@ -358,13 +381,16 @@ def get_dataset(dataset, data_path, feature_type='melspectrogram'):
         class_names = [str(i) for i in range(num_classes)]
     elif dataset == 'URBANSOUND8K':
         channel = 1
-        im_size = (128, 128)
+        im_size = URBANSOUND_MEL_SPEC if feature_type == 'melspectrogram' else URBANSOUND_MFCC
         num_classes = 10
         mean = [0.5]
         std = [0.5]
-        dst_train = UrbanSound8KDataset(root_dir=os.path.join(data_path, 'URBANSOUND8K'), feature_type= feature_type, split='train')
-
-        dst_test = UrbanSound8KDataset(root_dir=os.path.join(data_path, 'URBANSOUND8K'), split='val')
+        if feature_type == 'combined':
+            dst_train = UrbanSound8KDataset(root_dir=os.path.join(data_path, 'URBANSOUND8K'), feature_type= 'combined', split = 'train', hop_length=512)
+            dst_test = UrbanSound8KDataset(root_dir=os.path.join(data_path, 'URBANSOUND8K'), feature_type= 'melspectrogram', split ='val', hop_length=512)
+        else:
+            dst_train = UrbanSound8KDataset(root_dir=os.path.join(data_path, 'URBANSOUND8K'), feature_type= feature_type, split='train')
+            dst_test = UrbanSound8KDataset(root_dir=os.path.join(data_path, 'URBANSOUND8K'), split='val')
         class_names = [
             'air_conditioner', 'car_horn', 'children_playing', 'dog_bark',
             'drilling', 'engine_idling', 'gun_shot', 'jackhammer',
@@ -385,7 +411,7 @@ def get_dataset(dataset, data_path, feature_type='melspectrogram'):
         exit('unknown dataset: %s'%dataset)
     
 
-    testloader = torch.utils.data.DataLoader(dst_test, batch_size=256, shuffle=False, num_workers=0)
+    testloader = torch.utils.data.DataLoader(dst_test, batch_size=batch_size, shuffle=False, num_workers=0)
     return channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test, testloader
 
 
@@ -607,9 +633,14 @@ class EmbeddingsDataset(Dataset):
 
 if __name__ == "__main__":
 
-    dataset_subset = AudioMNISTDataset(root_dir="data/AUDIO_MNIST", split='train', feature_type='melspectrogram', hop_length=512)
-    print(f"Number of samples in subset dataset: {len(dataset_subset)}")
-    mx = 0
-    for i in range(len(dataset_subset)):
-        mx = max(mx, int(dataset_subset[i][0].shape[1]))
-    print(f"Max feature length in subset dataset: {mx}")
+    dataset_subset = UrbanSound8KDataset(
+        root_dir="data/URBANSOUND8K",
+        split="subset",
+        sample_rate=16000,
+        feature_type="mfcc",
+        folds=[1, 2, 3, 4, 5, 6, 7, 8],  # Use first 8 folds for training
+    )
+    print(f"Dataset length: {len(dataset_subset)}")
+    for i in range(5):
+        features, label = dataset_subset[i]
+        print(f"Sample {i}: features shape {features.shape}, label {label}")

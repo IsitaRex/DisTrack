@@ -9,7 +9,7 @@ import torch
 import torchaudio
 import torch.nn as nn
 from torchvision.utils import save_image
-from src.datasets import get_dataset, MNIST_MEL_SPEC, MNIST_MFCC
+from src.datasets import get_dataset, MNIST_MEL_SPEC, MNIST_MFCC, URBANSOUND_MEL_SPEC, URBANSOUND_MFCC
 from src.distillation_losses import DistillationLosses
 from src.utils import get_loops, get_network, evaluate_synset, match_loss, get_time, info_nce_loss, sample_class_data, sample_negative_samples, load_AST_feature_extractor
 
@@ -21,7 +21,7 @@ def main():
 
     parser = argparse.ArgumentParser(description='Parameter Processing')
     parser.add_argument('--dataset', type=str, default='AUDIO_MNIST', help='dataset')
-    parser.add_argument('--ipc', type=int, default=1, help='image(s) per class')
+    parser.add_argument('--ipc', type=int, default=10, help='image(s) per class')
     parser.add_argument('--num_exp', type=int, default=1, help='the number of experiments')
     parser.add_argument('--num_eval', type=int, default=10, help='the number of evaluating randomly initialized models')
     parser.add_argument('--epoch_eval_train', type=int, default=100, help='epochs to train a model with synthetic data') # it can be small for speeding up with little performance drop
@@ -48,8 +48,8 @@ def main():
     args.modality_gap_weight = 1.0 - args.vanilla_weight - args.joint_weight
     args.device = 'mps'
     args.feature = 'combined'
-    args.model = 'SimplifiedConvNet'  
-    USE_WANDB = args.use_wandb
+    args.model = 'SimplifiedConvNet' 
+    USE_WANDB = bool(args.use_wandb)
 
     if not os.path.exists(args.data_path):
         os.mkdir(args.data_path)
@@ -72,6 +72,10 @@ def main():
             "modality_gap_weight": args.modality_gap_weight
         })
 
+    MEL_SPEC_DIMS = MNIST_MEL_SPEC if args.dataset == 'AUDIO_MNIST' else URBANSOUND_MEL_SPEC
+    MFCC_DIMS = MNIST_MFCC if args.dataset == 'AUDIO_MNIST' else URBANSOUND_MFCC
+    embedding_size = 8192  if args.dataset == 'AUDIO_MNIST' else 32768
+
     transform_spec = torchaudio.transforms.MelSpectrogram(
                         sample_rate=16000,
                         hop_length=512,
@@ -81,7 +85,7 @@ def main():
     
     transform_mfcc = torchaudio.transforms.MFCC(
                     sample_rate=16000,
-                    n_mfcc=13,
+                    n_mfcc=40,
                     melkwargs={'n_fft': 2048, 'hop_length': 512, 'n_mels': 128}
                 ).to(args.device)
     model_eval_pool = [args.model]
@@ -93,7 +97,7 @@ def main():
         wav_len = 32000
 
     eval_it_pool = np.arange(0, args.Iteration+1, 500).tolist()
-    channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test, testloader = get_dataset(args.dataset, args.data_path, args.feature)
+    channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test, testloader = get_dataset(args.dataset, args.data_path, args.feature, args.batch_train)
     accs_all_exps = dict() # record performances of all experiments
     for key in model_eval_pool:
         accs_all_exps[key] = []
@@ -151,7 +155,7 @@ def main():
                     accs = []
                     accs_train = []
                     for it_eval in range(args.num_eval):
-                        net_eval = get_network(model_eval, channel, num_classes, MNIST_MEL_SPEC).to(args.device) # get a random model
+                        net_eval = get_network(model_eval, channel, num_classes, MEL_SPEC_DIMS, embedding_size).to(args.device) # get a random model
                         audio_syn_eval, label_syn_eval = copy.deepcopy(audio_syn.detach()), copy.deepcopy(label_syn.detach()) # avoid any unaware modification
             
                         # transform audio to spectrogram
@@ -201,10 +205,10 @@ def main():
 
 
             ''' Train synthetic data '''
-            net_mfcc = get_network(args.model, channel, num_classes, MNIST_MFCC).to(args.device)
+            net_mfcc = get_network(args.model, channel, num_classes, MFCC_DIMS, embedding_size).to(args.device)
             net_mfcc.train()
 
-            net_spec = get_network(args.model, channel, num_classes, MNIST_MEL_SPEC).to(args.device)
+            net_spec = get_network(args.model, channel, num_classes, MEL_SPEC_DIMS, embedding_size).to(args.device)
             net_spec.train()
 
             for param in list(net_spec.parameters()):
@@ -228,15 +232,15 @@ def main():
                 spec_syn = transform_spec(a_syn)
                 mfcc_syn = transform_mfcc(a_syn)
 
-                if mfcc_syn.shape[2] < MNIST_MFCC[1]:
-                    padding = MNIST_MFCC[1] - mfcc_syn.shape[2]
+                if mfcc_syn.shape[2] < MFCC_DIMS[1]:
+                    padding = MFCC_DIMS[1] - mfcc_syn.shape[2]
                     mfcc_syn = nn.functional.pad(mfcc_syn, (0, padding), mode='constant', value=0)
-                mfcc_syn = mfcc_syn.reshape((args.ipc, channel, mfcc_syn.shape[1], MNIST_MFCC[1]))
+                mfcc_syn = mfcc_syn.reshape((args.ipc, channel, mfcc_syn.shape[1], MFCC_DIMS[1]))
 
-                if spec_syn.shape[2] < MNIST_MEL_SPEC[1]:
-                    padding = MNIST_MEL_SPEC[1] - spec_syn.shape[2]
+                if spec_syn.shape[2] < MEL_SPEC_DIMS[1]:
+                    padding = MEL_SPEC_DIMS[1] - spec_syn.shape[2]
                     spec_syn = nn.functional.pad(spec_syn, (0, padding), mode='constant', value=0)
-                spec_syn = spec_syn.reshape((args.ipc, channel, spec_syn.shape[1], MNIST_MEL_SPEC[1]))
+                spec_syn = spec_syn.reshape((args.ipc, channel, spec_syn.shape[1], MEL_SPEC_DIMS[1]))
 
                 output_real_mfcc = embed_mfcc(mfcc_real).detach()
                 output_real_spec = embed_spec(spec_real).detach()

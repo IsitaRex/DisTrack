@@ -5,7 +5,6 @@ import torch.nn.functional as F
 # https://github.com/kuangliu/pytorch-cifar,
 # https://github.com/BIGBALLON/CIFAR-ZOO,
 
-
 ''' Swish activation '''
 class Swish(nn.Module): # Swish(x) = x∗σ(x)
     def __init__(self):
@@ -110,7 +109,7 @@ class ConvNet(nn.Module):
         return nn.Sequential(*layers), shape_feat
 
 class SimplifiedConvNet(nn.Module):
-    def __init__(self, channel=1, num_classes=10, net_width=128, net_depth=3, im_size=(32, 32)):
+    def __init__(self, channel=1, num_classes=10, net_width=128, net_depth=3, im_size=(32, 32), embedding_size=8192):
         super(SimplifiedConvNet, self).__init__()
         
         self.im_size = im_size
@@ -123,8 +122,8 @@ class SimplifiedConvNet(nn.Module):
             num_feat = dummy_output.view(dummy_output.size(0), -1).size(1)
         
         # Add linear layer to standardize embedding size to 8192
-        self.embedding_layer = nn.Linear(num_feat, 8192)
-        self.classifier = nn.Linear(8192, num_classes)
+        self.embedding_layer = nn.Linear(num_feat, embedding_size)
+        self.classifier = nn.Linear(embedding_size , num_classes)
 
     def forward(self, x):
         out = self.features(x)

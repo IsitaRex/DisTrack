@@ -13,7 +13,7 @@ def get_default_convnet_setting():
     return net_width, net_depth, net_act, net_norm, net_pooling
 
 
-def get_network(model, channel, num_classes, im_size=(32, 32)):
+def get_network(model, channel, num_classes, im_size=(32, 32), embedding_size = 8192):
     torch.random.manual_seed(int(time.time() * 1000) % 100000)
     net_width, net_depth, net_act, net_norm, net_pooling = get_default_convnet_setting()
 
@@ -24,7 +24,7 @@ def get_network(model, channel, num_classes, im_size=(32, 32)):
     elif model == 'AST':
         net = load_AST()
     elif model == 'SimplifiedConvNet':
-        net = SimplifiedConvNet(channel=channel, num_classes=num_classes, net_width=net_width, net_depth=net_depth, im_size=im_size)
+        net = SimplifiedConvNet(channel=channel, num_classes=num_classes, net_width=net_width, net_depth=net_depth, im_size=im_size, embedding_size=embedding_size)
     else:
         net = None
         exit('unknown model: %s'%model)
