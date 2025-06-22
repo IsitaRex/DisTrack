@@ -135,7 +135,7 @@ class SimplifiedConvNet(nn.Module):
     def embed(self, x):
         out = self.features(x)
         out = out.view(out.size(0), -1)
-        out = self.embedding_layer(out)
+        # out = self.embedding_layer(out)
         return out
 
     def _make_layers(self, channel, net_width, net_depth):
