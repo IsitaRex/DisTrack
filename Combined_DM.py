@@ -25,7 +25,7 @@ def main():
     parser.add_argument('--num_exp', type=int, default=1, help='the number of experiments')
     parser.add_argument('--num_eval', type=int, default=10, help='the number of evaluating randomly initialized models')
     parser.add_argument('--epoch_eval_train', type=int, default=100, help='epochs to train a model with synthetic data') # it can be small for speeding up with little performance drop
-    parser.add_argument('--Iteration', type=int, default=1000, help='training iterations')
+    parser.add_argument('--Iteration', type=int, default=100, help='training iterations')
     parser.add_argument('--lr_img', type=float, default=2.0, help='learning rate for updating synthetic images')
     parser.add_argument('--lr_net', type=float, default=0.1, help='learning rate for updating network parameters')
     parser.add_argument('--batch_real', type=int, default=64, help='batch size for real data')
@@ -33,7 +33,7 @@ def main():
     parser.add_argument('--data_path', type=str, default='data', help='dataset path')
     parser.add_argument('--save_path', type=str, default='result', help='path to save results')
     parser.add_argument('--use_wandb', type=bool, default=True, help='Use wandb for logging')
-    parser.add_argument('--vanilla_weight', type=float, default=0.0, help='Weight for Vanilla Loss')
+    parser.add_argument('--vanilla_weight', type=float, default=1.0, help='Weight for Vanilla Loss')
     parser.add_argument('--joint_weight', type=float, default=0.0, help='Weight for Joint Matching Loss')
 
     args = parser.parse_args()
@@ -49,7 +49,7 @@ def main():
     args.device = 'mps'
     args.feature = 'combined'
     args.model = 'SimplifiedConvNet' 
-    USE_WANDB = bool(args.use_wandb)
+    USE_WANDB = True
 
     if not os.path.exists(args.data_path):
         os.mkdir(args.data_path)
@@ -72,9 +72,16 @@ def main():
             "modality_gap_weight": args.modality_gap_weight
         })
 
-    MEL_SPEC_DIMS = MNIST_MEL_SPEC if args.dataset == 'AUDIO_MNIST' else URBANSOUND_MEL_SPEC
-    MFCC_DIMS = MNIST_MFCC if args.dataset == 'AUDIO_MNIST' else URBANSOUND_MFCC
-    embedding_size = 8192  if args.dataset == 'AUDIO_MNIST' else 32768
+    def get_dims(dataset):
+        if dataset == 'AUDIO_MNIST':
+            return MNIST_MEL_SPEC, MNIST_MFCC, 8192
+        elif dataset == 'UrbanSound8K':
+            return URBANSOUND_MEL_SPEC, URBANSOUND_MFCC, 32768
+        elif dataset == 'MedleySolos':
+            return (128, 10), (40, 128), 24576
+        else:
+            raise ValueError("Unsupported dataset: {}".format(dataset))
+    MEL_SPEC_DIMS, MFCC_DIMS, embedding_size = get_dims(args.dataset)
 
     transform_spec = torchaudio.transforms.MelSpectrogram(
                         sample_rate=16000,
@@ -96,7 +103,7 @@ def main():
     elif args.dataset == 'UrbanSound8K':   
         wav_len = 32000
 
-    eval_it_pool = np.arange(0, args.Iteration+1, 500).tolist()
+    eval_it_pool = np.arange(0, args.Iteration+1, 100).tolist()
     channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test, testloader = get_dataset(args.dataset, args.data_path, args.feature, args.batch_train)
     accs_all_exps = dict() # record performances of all experiments
     for key in model_eval_pool:
