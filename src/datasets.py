@@ -6,6 +6,7 @@ import numpy as np
 from torch.utils.data import Dataset
 from torchvision import datasets, transforms
 from src.embedder import Embedder
+from abc import abstractmethod
 from pathlib import Path
 import pickle
 import random
@@ -14,6 +15,149 @@ MNIST_MEL_SPEC = (128, 33)
 MNIST_MFCC = (13, 33)
 URBANSOUND_MEL_SPEC = (128, 128)
 URBANSOUND_MFCC = (40, 128)
+
+
+class AudioDataset(Dataset):
+    def __init__(self, root_dir: str, split: str = "train", sample_rate: int = 16000, feature_type: str = "melspectrogram", n_mels: int = 128, n_mfcc: int = 40, hop_length: int = 512):
+        """
+        Base class for audio datasets with support for MelSpectrogram and MFCC feature extraction.
+
+        Args:
+            root_dir (str): Path to the dataset directory.
+            split (str): Dataset split. Options: "train" or "val".
+            sample_rate (int): Sampling rate for audio files.
+            feature_type (str): Type of feature to extract. Options: "melspectrogram" or "mfcc".
+            n_mels (int): Number of mel bands for MelSpectrogram.
+            n_mfcc (int): Number of MFCC features to extract.
+        """
+        self.root_dir = root_dir
+        self.split = split
+        self.sample_rate = sample_rate
+        self.feature_type = feature_type.lower()
+        self.n_mels = n_mels
+        self.n_mfcc = n_mfcc
+
+        self.classes, self.label_map, self.file_paths, self.labels = self._load_dataset()
+
+        self._init_transforms(n_mels, hop_length, n_mfcc)
+
+        # For padding/truncating audio files
+        self.max_length = int(sample_rate * 3.09)  # Most UrbanSound8K clips are 4 seconds or less
+
+    @abstractmethod
+    def _load_dataset(self):
+        pass
+
+    
+    def __adjust_dims(self, features):
+        # second_dim = MNIST_MEL_SPEC[1]
+        # _, n_mels, time = features.shape 
+        
+        # if time < second_dim:
+        #     # Pad with zeros
+        #     pad = torch.zeros((1, n_mels, second_dim - time))
+        #     features = torch.cat([features, pad], dim=2)
+
+        return features
+    
+    def _init_transforms(self, n_mels, hop_length, n_mfcc):
+        """Initialize audio feature transforms."""
+        # Define transforms
+        if self.feature_type == "melspectrogram":
+            self.transform = torchaudio.transforms.MelSpectrogram(
+                sample_rate=self.sample_rate,
+                n_mels=n_mels,
+                n_fft=2048,
+                hop_length=hop_length
+            )
+        elif self.feature_type == "mfcc":
+            self.transform = torchaudio.transforms.MFCC(
+                sample_rate=self.sample_rate,
+                n_mfcc=n_mfcc,
+                melkwargs={"n_fft": 2048, "hop_length": hop_length, "n_mels": n_mels}
+            )
+        elif self.feature_type == 'combined':
+            # Use both MelSpectrogram and MFCC
+            self.spec_transform = torchaudio.transforms.MelSpectrogram(
+                sample_rate=self.sample_rate,
+                n_mels=n_mels,
+                n_fft=2048,
+                hop_length=hop_length
+            )
+            self.mfcc_transform = torchaudio.transforms.MFCC(
+                sample_rate=self.sample_rate,
+                n_mfcc=n_mfcc,
+                melkwargs={"n_fft": 2048, "hop_length": hop_length, "n_mels": n_mels}
+            )
+    
+    def _load_audio(self, file_path):
+        """Load audio file for a given track."""
+        waveform, sr = torchaudio.load(file_path)
+        
+        # Resample if necessary
+        if sr != self.sample_rate:
+            resampler = torchaudio.transforms.Resample(sr, self.sample_rate)
+            waveform = resampler(waveform)
+
+        # Convert stereo to mono if needed
+        if waveform.shape[0] > 1:
+            waveform = torch.mean(waveform, dim=0, keepdim=True)
+
+        # Pad/truncate to consistent length
+        if waveform.shape[1] < self.max_length:
+            # Pad with zeros
+            pad_size = self.max_length - waveform.shape[1]
+            waveform = torch.nn.functional.pad(waveform, (0, pad_size))
+        elif waveform.shape[1] > self.max_length:
+            # Truncate
+            waveform = waveform[:, :self.max_length]
+        
+        return waveform
+    
+    def _extract_features(self, waveform):
+        """Extract features from audio."""
+        
+        if self.feature_type == 'combined':
+            spec_features = self.__adjust_dims(self.spec_transform(waveform))
+            mfcc_features = self.__adjust_dims(self.mfcc_transform(waveform))
+            return spec_features, mfcc_features
+        else:
+            features = self.transform(waveform)
+            features = self.__adjust_dims(features)
+
+            return features
+    def __len__(self):
+        return len(self.file_paths)
+    
+    def __getitem__(self, idx):
+        track_id = self.file_paths[idx]
+        # Load audio
+        audio = self._load_audio(track_id)
+        
+        # Extract features
+        label = self.labels[idx]
+        if self.feature_type == 'combined':
+            spec_features, mfcc_features = self._extract_features(audio)
+            return spec_features, mfcc_features, label
+        else:
+            features = self._extract_features(audio)
+            return features, label
+    
+    def get_class_name(self, idx):
+        """Get class name for a given index."""
+        return self.classes[idx]
+    
+    def get_dataset_info(self):
+        """Get information about the dataset."""
+        info = {
+            'num_classes': len(self.classes),
+            'classes': self.classes,
+            'num_samples': len(self.track_ids),
+            'split': self.split,
+            'feature_type': self.feature_type,
+            'sample_rate': self.sample_rate
+        }
+        return info
 
 class GTZANDataset(Dataset):
     def __init__(self, root_dir: str, split: str = "train", sample_rate: int = 16000, feature_type: str = "melspectrogram", n_mels: int = 128, n_mfcc: int = 13, chunk_size: int = 128):
@@ -125,55 +269,42 @@ class GTZANDataset(Dataset):
                 chunks.append(chunk)
         return torch.stack(chunks)
 
-class AudioMNISTDataset(Dataset):
-    def __init__(self, root_dir: str, split="train", train_size=0.80, sample_rate=16000, feature_type = 'melspectrogram', hop_length=512, n_mfcc=13, n_mels=128):
-        self.root_dir = root_dir
-        self.file_list = []
-        self.label_list = []
-        self.sample_rate = sample_rate
-        self.feature_type = feature_type.lower()
-
-        for dirname, _, filenames in os.walk(root_dir):
+class AudioMNISTDataset(AudioDataset):
+    def __init__(self, root_dir: str, split="train", train_size=0.80, sample_rate=16000, 
+                 feature_type='melspectrogram', hop_length=512, n_mfcc=13, n_mels=128):
+        self.train_size = train_size
+        super().__init__(root_dir, split, sample_rate, feature_type, n_mels, n_mfcc, hop_length)
+        self.max_length = sample_rate + 500
+        
+    def _load_dataset(self):
+        """Load AudioMNIST dataset metadata and prepare file paths/labels."""
+        file_list = []
+        label_list = []
+        
+        # Walk through directory to find all WAV files
+        for dirname, _, filenames in os.walk(self.root_dir):
             for filename in filenames:
-                if filename[-3:] == "wav":
-                    self.file_list.append(os.path.join(dirname, filename))
-                    self.label_list.append(int(filename[0]))
-    
-        if self.feature_type == "melspectrogram":
-            self.transform = torchaudio.transforms.MelSpectrogram(
-                sample_rate=self.sample_rate,
-                n_mels=n_mels,
-                n_fft=2048,
-                hop_length=hop_length
-            )
-        elif self.feature_type == "mfcc":
-            self.transform = torchaudio.transforms.MFCC(
-                sample_rate=self.sample_rate,
-                n_mfcc=n_mfcc,
-                melkwargs={"n_fft": 2048, "hop_length": hop_length, "n_mels": n_mels}
-            )
-        elif self.feature_type == 'combined':
-            # Use both MelSpectrogram and MFCC
-            self.spec_transform = torchaudio.transforms.MelSpectrogram(
-                sample_rate=self.sample_rate,
-                n_mels=n_mels,
-                n_fft=2048,
-                hop_length=hop_length
-            )
-            self.mfcc_transform = torchaudio.transforms.MFCC(
-                sample_rate=self.sample_rate,
-                n_mfcc=n_mfcc,
-                melkwargs={"n_fft": 2048, "hop_length": hop_length, "n_mels": n_mels}
-            )
+                if filename.endswith(".wav"):
+                    file_list.append(os.path.join(dirname, filename))
+                    label_list.append(int(filename[0]))  # First character is the digit label
         
-        total_len = len(self.file_list)
+        # Split into train/val based on train_size
+        total_len = len(file_list)
+        if self.split == 'train':
+            file_list = file_list[:int(self.train_size * total_len)]
+            label_list = label_list[:int(self.train_size * total_len)]
+        elif self.split == 'val':
+            file_list = file_list[int(self.train_size * total_len):]
+            label_list = label_list[int(self.train_size * total_len):]
         
-        if split == 'train':
-            self.file_list, self.label_list = self.file_list[:int(train_size * total_len)], self.label_list[:int(train_size * total_len)]
-        elif split == 'val':
-            self.file_list, self.label_list = self.file_list[int(train_size * total_len):], self.label_list[int(train_size * total_len):]
+        # AudioMNIST has digits 0-9 as classes
+        classes = [str(i) for i in range(10)]
+        label_map = {str(i): i for i in range(10)}
+        
+        return classes, label_map, file_list, label_list
 
     def __adjust_dims(self, features):
+        """Special dimension adjustment for AudioMNIST to match MNIST_MEL_SPEC size."""
         second_dim = MNIST_MEL_SPEC[1]
         _, n_mels, time = features.shape
         
@@ -183,341 +314,74 @@ class AudioMNISTDataset(Dataset):
             features = torch.cat([features, pad], dim=2)
 
         return features
-    
-    def __getitem__(self, idx):
-        waveform, sr = torchaudio.load(self.file_list[idx])
-        if sr != self.sample_rate:
-            resampler = torchaudio.transforms.Resample(orig_freq=sr, new_freq=self.sample_rate)
-            waveform = resampler(waveform)
-        if self.feature_type == 'combined':
-            spec_features = self.__adjust_dims(self.spec_transform(waveform))
-            mfcc_features = self.__adjust_dims(self.mfcc_transform(waveform))
-            return spec_features, mfcc_features, self.label_list[idx]
-        else:
-            features = self.transform(waveform)
-            features = self.__adjust_dims(features)
-
-            return features, self.label_list[idx]
-    
-    def __len__(self):
-        return len(self.file_list)
-    
-class UrbanSound8KDataset(Dataset):
-    def __init__(self, root_dir: str, split: str = "train", sample_rate: int = 16000, 
-                 feature_type: str = "melspectrogram", hop_length: int = 512, n_mels: int = 128, 
-                 n_mfcc: int = 40, folds=None):
-        """
-        UrbanSound8K Dataset with support for MelSpectrogram and MFCC feature extraction.
-
-        Args:
-            root_dir (str): Path to the UrbanSound8K directory containing 'audio' and 'metadata' folders.
-            split (str): Dataset split. Options: "train" or "val".
-            sample_rate (int): Sampling rate for audio files.
-            feature_type (str): Type of feature to extract. Options: "melspectrogram" or "mfcc".
-            n_mels (int): Number of mel bands for MelSpectrogram.
-            n_mfcc (int): Number of MFCC features to extract.
-            chunk_size (int): Size of the feature map (chunk_size x chunk_size).
-            folds (list): List of folds to include. If None, uses standard train/val split.
-        """
-        self.root_dir = root_dir
-        self.split = split
-        self.sample_rate = sample_rate
-        self.feature_type = feature_type.lower()
-        self.n_mels = n_mels
-        self.n_mfcc = n_mfcc
-        
+class UrbanSound8KDataset(AudioDataset):
+    def __init__(self, root_dir: str, split="train", train_size=0.80, sample_rate=16000, 
+                 feature_type='melspectrogram', hop_length=512, n_mfcc=13, n_mels=128):
+        super().__init__(root_dir, split, sample_rate, feature_type, n_mels, n_mfcc, hop_length)
+        self.max_length = int(sample_rate * 4.09)
+       
+    def _load_dataset(self):
+        """Load UrbanSound8K dataset metadata and prepare file paths/labels."""
         # Load metadata
-        metadata_path = os.path.join(root_dir, 'metadata', 'UrbanSound8K.csv')
-        self.metadata = pd.read_csv(metadata_path)
+        metadata_path = os.path.join(self.root_dir, 'metadata', 'UrbanSound8K.csv')
+        metadata = pd.read_csv(metadata_path)
         
         # Create label map from class names
-        self.classes = sorted(self.metadata['class'].unique())
-        self.label_map = {cls: idx for idx, cls in enumerate(self.classes)}
-        self.num_classes = len(self.classes)
+        classes = sorted(metadata['class'].unique())
+        label_map = {cls: idx for idx, cls in enumerate(classes)}
         
-        # Filter folds based on split if folds not specified
-        if folds is None:
-            if split == "train":
+        # Handle folds parameter (specific to UrbanSound8K)
+        if hasattr(self, 'folds') and self.folds is not None:
+            folds = self.folds
+        else:
+            if self.split == "train":
                 folds = [1, 2, 3, 4, 5, 6, 7, 8]  # First 8 folds for training
-            elif split == "val":
+            elif self.split == "val":
                 folds = [9, 10]  # Last 2 folds for validation
-            else:
-                raise ValueError("Invalid split. Choose 'train' or 'val'.")
         
         # Filter metadata for selected folds
-        self.metadata = self.metadata[self.metadata['fold'].isin(folds)]
+        metadata = metadata[metadata['fold'].isin(folds)]
         
         # Collect all file paths and labels
-        self.file_paths = []
-        self.labels = []
-        for _, row in self.metadata.iterrows():
-            fold = row['fold']
-            if fold not in folds:
-                continue
+        file_paths = []
+        labels = []
+        for _, row in metadata.iterrows():
             fname = row['slice_file_name']
-            file_path = os.path.join(root_dir, 'audio', f'fold{fold}', fname)
-            self.file_paths.append(file_path)
-            self.labels.append(self.label_map[row['class']])
+            file_path = os.path.join(self.root_dir, 'audio', f'fold{row["fold"]}', fname)
+            file_paths.append(file_path)
+            labels.append(label_map[row['class']])
         
-        # Define transforms
-        if self.feature_type == "melspectrogram":
-            self.transform = torchaudio.transforms.MelSpectrogram(
-                sample_rate=self.sample_rate,
-                n_mels=n_mels,
-                n_fft=2048,
-                hop_length=hop_length
-            )
-        elif self.feature_type == "mfcc":
-            self.transform = torchaudio.transforms.MFCC(
-                sample_rate=self.sample_rate,
-                n_mfcc=n_mfcc,
-                melkwargs={"n_fft": 2048, "hop_length": hop_length, "n_mels": n_mels}
-            )
-        elif self.feature_type == 'combined':
-            # Use both MelSpectrogram and MFCC
-            self.spec_transform = torchaudio.transforms.MelSpectrogram(
-                sample_rate=self.sample_rate,
-                n_mels=n_mels,
-                n_fft=2048,
-                hop_length=hop_length
-            )
-            self.mfcc_transform = torchaudio.transforms.MFCC(
-                sample_rate=self.sample_rate,
-                n_mfcc=n_mfcc,
-                melkwargs={"n_fft": 2048, "hop_length": hop_length, "n_mels": n_mels}
-            )
-        
-        # For padding/truncating audio files
-        self.max_length = int(sample_rate * 4.09)  # Most UrbanSound8K clips are 4 seconds or less
+        return classes, label_map, file_paths, labels
 
-    def __len__(self):
-        return len(self.file_paths)  # Return 3 chunks per file
-    
-    def __adjust_dims(self, features):
-        # second_dim = MNIST_MEL_SPEC[1]
-        # _, n_mels, time = features.shape
-        
-        # if time < second_dim:
-        #     # Pad with zeros
-        #     pad = torch.zeros((1, n_mels, second_dim - time))
-        #     features = torch.cat([features, pad], dim=2)
-
-        return features
-
-    def __getitem__(self, idx):
-        """Loads an audio file, extracts features, and returns a tensor."""
-        file_path = self.file_paths[idx]
-        label = self.labels[idx]
-
-        # Load audio file
-        waveform, sr = torchaudio.load(file_path)
-
-        # Resample if necessary
-        if sr != self.sample_rate:
-            resampler = torchaudio.transforms.Resample(orig_freq=sr, new_freq=self.sample_rate)
-            waveform = resampler(waveform)
-
-        # Convert stereo to mono if needed
-        if waveform.shape[0] > 1:
-            waveform = torch.mean(waveform, dim=0, keepdim=True)
-
-        # Pad/truncate to consistent length
-        if waveform.shape[1] < self.max_length:
-            # Pad with zeros
-            pad_size = self.max_length - waveform.shape[1]
-            waveform = torch.nn.functional.pad(waveform, (0, pad_size))
-        elif waveform.shape[1] > self.max_length:
-            # Truncate
-            waveform = waveform[:, :self.max_length]
-
-        # features = self.transform(waveform)
-        
-        if self.feature_type == 'combined':
-            spec_features = self.__adjust_dims(self.spec_transform(waveform))
-            mfcc_features = self.__adjust_dims(self.mfcc_transform(waveform))
-            return spec_features, mfcc_features, self.labels[idx]
-        else:
-            features = self.transform(waveform)
-            features = self.__adjust_dims(features)
-
-            return features, self.labels[idx]
-    
-        return torch.stack(chunks)
-
-class MedleySolosDataset(Dataset):
-    def __init__(self, root_dir, split='train', feature_type='melspectrogram', 
-                 sample_rate=16000, n_mels=128, n_fft=2048, hop_length=512, 
-                 n_mfcc=13, target_length=128):
-        """
-        Medley-solos dataset class following UrbanSound8K structure.
-        
-        Args:
-            root_dir (str): Root directory of the dataset
-            split (str): 'train', 'val', or 'test'
-            feature_type (str): 'melspectrogram' or 'mfcc'
-            sample_rate (int): Sample rate for audio processing
-            n_mels (int): Number of mel filters
-            n_fft (int): FFT window size
-            hop_length (int): Hop length for STFT
-            n_mfcc (int): Number of MFCC coefficients
-            target_length (int): Target length for features
-        """
-        self.root_dir = root_dir
-        self.split = split
-        self.feature_type = feature_type
-        self.sample_rate = sample_rate
-        self.target_length = target_length
-        
-        # Initialize mirdata dataset
-        self.metadata = pd.read_csv(root_dir + '/annotation/Medley-solos-DB_metadata.csv')
+class MedleySolosDataset(AudioDataset):
+    def _load_dataset(self):
+        """Load Medley-solos dataset metadata and prepare file paths/labels."""
+        # Load metadata
+        metadata = pd.read_csv(os.path.join(self.root_dir, 'annotation', 'Medley-solos-DB_metadata.csv'))
         
         # Get instrument classes
-        self.classes = ['Clarinet', 'Distorted Electric Guitar', 'Female Singer', 'Flute', 'Piano', 'Tenor Saxophone', 'Trumpet', 'Violin']
-        self.label_map = {cls: idx for idx, cls in zip(self.metadata.instrument, self.metadata.instrument_id)}
-        self.num_classes = len(self.classes)
-
-        split = 'validation' if split == 'val' else split
+        classes = ['Clarinet', 'Distorted Electric Guitar', 'Female Singer', 
+                  'Flute', 'Piano', 'Tenor Saxophone', 'Trumpet', 'Violin']
+        label_map = {cls: idx for idx, cls in zip(metadata.instrument, metadata.instrument_id)}
+        
+        # Handle split parameter
+        split = 'validation' if self.split == 'val' else self.split
         split = 'training' if split == 'train' else split
-        self.split = [split] if split in ['train', 'val', 'test'] else ['train', 'val', 'test']
-        # Initialize audio transforms
-        self._init_transforms(n_mels, n_fft, hop_length, n_mfcc)
         
         # Collect all file paths and labels
-        self.file_paths = []
-        self.labels = []
-        for _, row in self.metadata.iterrows():
-            fold = row['subset']
-            if fold not in self.split:
+        file_paths = []
+        labels = []
+        for _, row in metadata.iterrows():
+            if row['subset'] != split:
                 continue
-            fname = 'Medley-solos-DB_'+str(row['subset'])+'-'+str(row['instrument_id'])+'_'+str(row['uuid4'])+'.wav'
-            file_path = os.path.join(root_dir, 'audio',  fname)
-            self.file_paths.append(file_path)
-            self.labels.append(row['instrument_id'])
+            fname = f'Medley-solos-DB_{row["subset"]}-{row["instrument_id"]}_{row["uuid4"]}.wav'
+            file_path = os.path.join(self.root_dir, 'audio', fname)
+            file_paths.append(file_path)
+            labels.append(row['instrument_id'])
         
-        # For padding/truncating audio files
-        self.max_length = int(sample_rate * 3.09)  # Most UrbanSound8K clips are 4 seconds or less
+        return classes, label_map, file_paths, labels
 
-    
-    def __adjust_dims(self, features):
-        # second_dim = MNIST_MEL_SPEC[1]
-        # _, n_mels, time = features.shape
-        
-        # if time < second_dim:
-        #     # Pad with zeros
-        #     pad = torch.zeros((1, n_mels, second_dim - time))
-        #     features = torch.cat([features, pad], dim=2)
 
-        return features
-    
-    def _init_transforms(self, n_mels, n_fft, hop_length, n_mfcc):
-        """Initialize audio feature transforms."""
-        # Define transforms
-        if self.feature_type == "melspectrogram":
-            self.transform = torchaudio.transforms.MelSpectrogram(
-                sample_rate=self.sample_rate,
-                n_mels=n_mels,
-                n_fft=2048,
-                hop_length=hop_length
-            )
-        elif self.feature_type == "mfcc":
-            self.transform = torchaudio.transforms.MFCC(
-                sample_rate=self.sample_rate,
-                n_mfcc=n_mfcc,
-                melkwargs={"n_fft": 2048, "hop_length": hop_length, "n_mels": n_mels}
-            )
-        elif self.feature_type == 'combined':
-            # Use both MelSpectrogram and MFCC
-            self.spec_transform = torchaudio.transforms.MelSpectrogram(
-                sample_rate=self.sample_rate,
-                n_mels=n_mels,
-                n_fft=2048,
-                hop_length=hop_length
-            )
-            self.mfcc_transform = torchaudio.transforms.MFCC(
-                sample_rate=self.sample_rate,
-                n_mfcc=n_mfcc,
-                melkwargs={"n_fft": 2048, "hop_length": hop_length, "n_mels": n_mels}
-            )
-    
-    def _load_audio(self, file_path):
-        """Load audio file for a given track."""
-        waveform, sr = torchaudio.load(file_path)
-        
-        # Resample if necessary
-        if sr != self.sample_rate:
-            resampler = torchaudio.transforms.Resample(sr, self.sample_rate)
-            waveform = resampler(waveform)
-
-        # Convert stereo to mono if needed
-        if waveform.shape[0] > 1:
-            waveform = torch.mean(waveform, dim=0, keepdim=True)
-
-        # Pad/truncate to consistent length
-        if waveform.shape[1] < self.max_length:
-            # Pad with zeros
-            pad_size = self.max_length - waveform.shape[1]
-            waveform = torch.nn.functional.pad(waveform, (0, pad_size))
-        elif waveform.shape[1] > self.max_length:
-            # Truncate
-            waveform = waveform[:, :self.max_length]
-        
-        return waveform
-    
-    def _extract_features(self, waveform):
-        """Extract features from audio."""
-        
-        if self.feature_type == 'combined':
-            spec_features = self.__adjust_dims(self.spec_transform(waveform))
-            mfcc_features = self.__adjust_dims(self.mfcc_transform(waveform))
-            return spec_features, mfcc_features
-        else:
-            features = self.transform(waveform)
-            features = self.__adjust_dims(features)
-
-            return features
-    def __len__(self):
-        return len(self.file_paths)
-    
-    def __getitem__(self, idx):
-        track_id = self.file_paths[idx]
-        # Load audio
-        audio = self._load_audio(track_id)
-        
-        # Extract features
-        label = self.labels[idx]
-        if self.feature_type == 'combined':
-            spec_features, mfcc_features = self._extract_features(audio)
-            return spec_features, mfcc_features, label
-        else:
-            features = self._extract_features(audio)
-            return features, label
-    
-    def get_class_name(self, idx):
-        """Get class name for a given index."""
-        return self.classes[idx]
-    
-    def get_dataset_info(self):
-        """Get information about the dataset."""
-        info = {
-            'num_classes': len(self.classes),
-            'classes': self.classes,
-            'num_samples': len(self.track_ids),
-            'split': self.split,
-            'feature_type': self.feature_type,
-            'sample_rate': self.sample_rate
-        }
-        return info
-
-# Add to the get_dataset function
-def get_dataset(dataset, data_path, feature_type='melspectrogram', **kwargs):
-    """Get dataset instance."""
-    if dataset == 'MEDLEY_SOLOS':
-        return MedleySolosDataset(
-            root_dir=data_path,
-            feature_type=feature_type,
-            **kwargs
-        )
-    # ... existing code for other datasets
 
 def get_dataset(dataset, data_path, feature_type='melspectrogram', batch_size=256):
     if dataset == 'MNIST':
@@ -842,11 +706,11 @@ if __name__ == "__main__":
     dataset = MedleySolosDataset(
         root_dir="data/Medley-solos-DB",
         split="train",
-        feature_type="melspectrogram",
+        feature_type="combined",
         sample_rate=16000)
     
     print('Dataset length:', {len(dataset)})
     for i in range(5):
-        features, label = dataset[i]
+        spec, features, label = dataset[i]
         print(f"Sample {i}: features shape {features.shape}, label {label}")
 
