@@ -25,16 +25,17 @@ def main():
     parser.add_argument('--feature', type=str, default='melspectrogram', help='melspectrogram/mfcc/AST/')
     parser.add_argument('--ipc', type=int, default=10, help='image(s) per class')
     parser.add_argument('--num_exp', type=int, default=1, help='the number of experiments')
-    parser.add_argument('--num_eval', type=int, default=1, help='the number of evaluating randomly initialized models')
+    parser.add_argument('--num_eval', type=int, default=10, help='the number of evaluating randomly initialized models')
     parser.add_argument('--epoch_eval_train', type=int, default=100, help='epochs to train a model with synthetic data') # it can be small for speeding up with little performance drop
-    parser.add_argument('--Iteration', type=int, default=1000, help='training iterations')
+    parser.add_argument('--Iteration', type=int, default=500, help='training iterations')
     parser.add_argument('--lr_img', type=float, default=2.0, help='learning rate for updating synthetic images')
     parser.add_argument('--lr_net', type=float, default=0.1, help='learning rate for updating network parameters')
+    parser.add_argument('--duration', type=int, default=1, help='Duration of audio in seconds')
     parser.add_argument('--batch_real', type=int, default=64, help='batch size for real data')
     parser.add_argument('--batch_train', type=int, default=64, help='batch size for training networks')
     parser.add_argument('--data_path', type=str, default='data', help='dataset path')
     parser.add_argument('--save_path', type=str, default='result', help='path to save results')
-    parser.add_argument('--use_wandb', type=bool, default=False, help='Use wandb for logging')
+    parser.add_argument('--use_wandb', type=bool, default=True, help='Use wandb for logging')
     parser.add_argument('--use_contrastive', type=bool, default=False, help='Use contrastive loss')
     parser.add_argument('--contrastive_weight', type=float, default=0.2, help='Weight for contrastive loss')
 
@@ -61,7 +62,8 @@ def main():
             "epoch_eval_train": args.epoch_eval_train,
             "num_eval": args.num_eval,
             "Iteration": args.Iteration,
-            "feature": args.feature
+            "feature": args.feature,
+            "duration": args.duration,
         })
 
     transform_to_spec = torchaudio.transforms.MelSpectrogram(
@@ -87,22 +89,27 @@ def main():
         args.dataset = f"EmbeddingsDataset_{args.dataset}"
         feature_extractor = load_AST_feature_extractor()
     
-    embedding_size = 8192  if args.dataset == 'AUDIO_MNIST' else 32768
+    def get_dims(dataset):
+        if dataset == 'AUDIO_MNIST':
+            return 8192
+        elif dataset == 'URBANSOUND8K':
+            return 32768
+        elif dataset == 'MedleySolos':
+            return 24576
+        else:
+            raise ValueError("Unsupported dataset: {}".format(dataset))
+        
+    embedding_size = get_dims(args.dataset)
 
-    wav_len = 16000
-    if args.dataset == 'AUDIO_MNIST':
-        wav_len = 16000
-    elif args.dataset == 'UrbanSound8K':   
-        wav_len = 16000
+    wav_len = 16000*args.duration
 
-    eval_it_pool = np.arange(0, args.Iteration+1, 200).tolist()
+    eval_it_pool = np.arange(0, args.Iteration+1, 500).tolist()
     channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test, testloader = get_dataset(args.dataset, args.data_path, args.feature, batch_size=args.batch_real)
     accs_all_exps = dict() # record performances of all experiments
     for key in model_eval_pool:
         accs_all_exps[key] = []
 
     data_save = []
-    
 
 
     for exp in range(args.num_exp):
