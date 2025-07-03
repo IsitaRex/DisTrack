@@ -381,9 +381,216 @@ class MedleySolosDataset(AudioDataset):
         
         return classes, label_map, file_paths, labels
 
+class GIANTSTEPS_TEMPO(AudioDataset):
+    def __init__(self, root_dir: str, split: str = "train", sample_rate: int = 16000, 
+                 feature_type: str = "melspectrogram", n_mels: int = 128, n_mfcc: int = 40, 
+                 hop_length: int = 512, chunk_duration: float = 3.0):
+        """
+        GiantSteps Tempo Dataset with:
+        - Chunked spectrograms
+        - Discretized tempo labels (3 classes)
+        - Custom train/val split: 50 songs per class for VAL, rest for TRAIN
+        """
+        self.chunk_duration = chunk_duration
+        self.frames_per_chunk = int(chunk_duration * sample_rate / hop_length)
+        self.songs_per_class_val = 50  # 50 songs per class for VALIDATION
+        
+        super().__init__(root_dir, split, sample_rate, feature_type, n_mels, n_mfcc, hop_length)
+        self.max_length = int(sample_rate * 120)
+        # Discretize labels before chunking
+        self.original_labels = [self._discretize_tempo(bpm) for bpm in self.labels]
+        self.classes = ['slow', 'medium', 'fast']  # Update class names
+        self.label_map = {'slow': 0, 'medium': 1, 'fast': 2}
+        
+        # Generate chunk indices
+        self.chunk_indices = self._generate_chunk_indices()
 
+    def _discretize_tempo(self, bpm: float) -> int:
+        """Convert continuous BPM to discrete class (0, 1, or 2)"""
+        if bpm < 120:
+            return 0  # 'slow'
+        elif 120 <= bpm <= 140:
+            return 1  # 'medium'
+        else:
+            return 2  # 'fast'
 
-def get_dataset(dataset, data_path, feature_type='melspectrogram', batch_size=256):
+    def _load_dataset(self):
+        """Load GiantSteps tempo annotations with custom train/val split."""
+        audio_dir = os.path.join(self.root_dir, 'audio')
+        tempo_dir = os.path.join(self.root_dir, 'tempo')
+        
+        # First, load all files and their BPMs
+        all_files = []
+        all_bpms = []
+        
+        for audio_file in Path(audio_dir).glob('*.mp3'):
+            tempo_file = Path(tempo_dir) / f"{audio_file.stem}.bpm"
+            if tempo_file.exists():
+                with open(tempo_file, 'r') as f:
+                    bpm = float(f.read().strip())
+                    all_files.append(str(audio_file))
+                    all_bpms.append(bpm)
+        
+        # Group files by discretized tempo class
+        files_by_class = {0: [], 1: [], 2: []}  # slow, medium, fast
+        bpms_by_class = {0: [], 1: [], 2: []}
+        
+        for file_path, bpm in zip(all_files, all_bpms):
+            tempo_class = self._discretize_tempo(bpm)
+            files_by_class[tempo_class].append(file_path)
+            bpms_by_class[tempo_class].append(bpm)
+        
+        # Print class distribution
+        print("Class distribution:")
+        for class_idx, class_name in enumerate(['slow', 'medium', 'fast']):
+            print(f"  {class_name}: {len(files_by_class[class_idx])} songs")
+        
+        # Create train/val split: 50 songs per class for VAL, rest for TRAIN
+        train_files = []
+        train_bpms = []
+        val_files = []
+        val_bpms = []
+        
+        for class_idx in range(3):
+            class_files = files_by_class[class_idx]
+            class_bpms = bpms_by_class[class_idx]
+            
+            # Ensure we have enough files for this class
+            available_files = len(class_files)
+            val_count = min(self.songs_per_class_val, available_files)
+            
+            if available_files < self.songs_per_class_val:
+                print(f"Warning: Class {['slow', 'medium', 'fast'][class_idx]} has only "
+                      f"{available_files} songs, using all for validation")
+            
+            # Sort for reproducibility
+            combined = list(zip(class_files, class_bpms))
+            combined.sort(key=lambda x: x[0])  # Sort by filename
+            
+            # Split: first val_count for VALIDATION, rest for TRAINING
+            val_portion = combined[:val_count]
+            train_portion = combined[val_count:]
+            
+            val_files.extend([f for f, _ in val_portion])
+            val_bpms.extend([b for _, b in val_portion])
+            train_files.extend([f for f, _ in train_portion])
+            train_bpms.extend([b for _, b in train_portion])
+            
+            print(f"  Split for {['slow', 'medium', 'fast'][class_idx]}: "
+                  f"{len(train_portion)} train, {len(val_portion)} val")
+        
+        # Select files based on split
+        if self.split == 'train':
+            selected_files = train_files
+            selected_bpms = train_bpms
+        elif self.split == 'val':
+            selected_files = val_files
+            selected_bpms = val_bpms
+        else:
+            # For 'all' or other splits, use all data
+            selected_files = all_files
+            selected_bpms = all_bpms
+        
+        print(f"Selected {len(selected_files)} songs for {self.split} split")
+        
+        # Store original file paths and BPMs for chunk generation
+        self.original_file_paths = selected_files
+        self.original_bpms = selected_bpms
+        
+        # Return dummy classes (will be updated in __init__ after discretization)
+        return ['tempo'], {'tempo': 0}, selected_files, selected_bpms
+
+    def _generate_chunk_indices(self):
+        """Generate indices for audio chunks."""
+        chunk_indices = []
+        
+        for idx, file_path in enumerate(self.original_file_paths):
+
+            try:
+                # Load audio to determine number of chunks
+                waveform = self._load_audio(file_path)
+                features = self._extract_features(waveform)
+                
+                if isinstance(features, tuple):  # For combined features
+                    features = features[0]  # Use spectrogram for chunk calculation
+                
+                # Calculate number of chunks
+                total_frames = features.shape[2]
+                n_chunks = total_frames // self.frames_per_chunk
+                
+                # Only add chunks if we have at least one complete chunk
+                if n_chunks > 0:
+                    for chunk_idx in range(n_chunks):
+                        chunk_indices.append((idx, chunk_idx))
+                        
+            except Exception as e:
+                print(f"  Warning: Could not process {file_path}: {e}")
+                continue
+        
+        print(f"Generated {len(chunk_indices)} chunks total")
+        
+        # Print chunk distribution by class
+        chunk_counts = {0: 0, 1: 0, 2: 0}
+        for file_idx, _ in chunk_indices:
+            tempo_class = self.original_labels[file_idx]
+            chunk_counts[tempo_class] += 1
+        
+        print("Chunk distribution by class:")
+        for class_idx, class_name in enumerate(['slow', 'medium', 'fast']):
+            print(f"  {class_name}: {chunk_counts[class_idx]} chunks")
+        
+        return chunk_indices
+
+    def _get_chunk(self, features, chunk_idx):
+        """Extract a chunk from features."""
+        start = chunk_idx * self.frames_per_chunk
+        end = start + self.frames_per_chunk
+        return features[:, :, start:end]
+
+    def __len__(self):
+        return len(self.chunk_indices)
+
+    def __getitem__(self, idx):
+        file_idx, chunk_idx = self.chunk_indices[idx]
+        
+        # Load original audio
+        audio = self._load_audio(self.original_file_paths[file_idx])
+        
+        # Extract features
+        if self.feature_type == 'combined':
+            spec_features, mfcc_features = self._extract_features(audio)
+            spec_chunk = self._get_chunk(spec_features, chunk_idx)
+            mfcc_chunk = self._get_chunk(mfcc_features, chunk_idx)
+            
+            # Ensure chunks have correct size (pad if necessary)
+            if spec_chunk.shape[2] < self.frames_per_chunk:
+                pad_size = self.frames_per_chunk - spec_chunk.shape[2]
+                spec_chunk = torch.nn.functional.pad(spec_chunk, (0, pad_size))
+                mfcc_chunk = torch.nn.functional.pad(mfcc_chunk, (0, pad_size))
+                
+            return spec_chunk, mfcc_chunk, self.original_labels[file_idx]
+        else:
+            features = self._extract_features(audio)
+            chunk = self._get_chunk(features, chunk_idx)
+            
+            # Pad if necessary
+            if chunk.shape[2] < self.frames_per_chunk:
+                pad_size = self.frames_per_chunk - chunk.shape[2]
+                chunk = torch.nn.functional.pad(chunk, (0, pad_size))
+                
+            return chunk, self.original_labels[file_idx]
+    
+    def get_split_info(self):
+        """Get information about the train/val split."""
+        return {
+            'songs_per_class_val': self.songs_per_class_val,  # Updated variable name
+            'split': self.split,
+            'total_songs': len(self.original_file_paths),
+            'total_chunks': len(self.chunk_indices),
+            'chunk_duration': self.chunk_duration
+        }
+
+def get_dataset(dataset, data_path, feature_type='melspectrogram', batch_size=256, chunk_duration=3.0):
     if dataset == 'MNIST':
         channel = 1
         im_size = (28, 28)
@@ -399,8 +606,8 @@ def get_dataset(dataset, data_path, feature_type='melspectrogram', batch_size=25
         channel = 1  # Mel-Spectrogram is single-channel
         im_size = (128, 128)
         num_classes = 10
-        mean = [0.5]
-        std = [0.5]
+        mean = [0.0]
+        std = [1.0]
 
         # Load GTZAN dataset manually
         dst_train = GTZANDataset(root_dir=os.path.join(data_path, 'GTZAN'), split = 'train')
@@ -412,8 +619,8 @@ def get_dataset(dataset, data_path, feature_type='melspectrogram', batch_size=25
         im_size =  MNIST_MEL_SPEC if feature_type == 'melspectrogram' else MNIST_MFCC
         # im_size =  MNIST_MEL_SPEC 
         num_classes = 10
-        mean = [0.5]
-        std = [0.5]
+        mean = [0.0]
+        std = [1.0]
         if feature_type == 'combined':
             dst_train = AudioMNISTDataset(root_dir=os.path.join(data_path, 'AUDIO_MNIST'), feature_type= 'combined', split = 'train', hop_length=512)
             dst_test = AudioMNISTDataset(root_dir=os.path.join(data_path, 'AUDIO_MNIST'), feature_type= 'melspectrogram', split ='val', hop_length=512)
@@ -425,8 +632,8 @@ def get_dataset(dataset, data_path, feature_type='melspectrogram', batch_size=25
         channel = 1
         im_size = URBANSOUND_MEL_SPEC if feature_type == 'melspectrogram' else URBANSOUND_MFCC
         num_classes = 10
-        mean = [0.5]
-        std = [0.5]
+        mean = [0.0]
+        std = [1.0]
         if feature_type == 'combined':
             dst_train = UrbanSound8KDataset(root_dir=os.path.join(data_path, 'URBANSOUND8K'), feature_type= 'combined', split = 'train', hop_length=512)
             dst_test = UrbanSound8KDataset(root_dir=os.path.join(data_path, 'URBANSOUND8K'), feature_type= 'melspectrogram', split ='val', hop_length=512)
@@ -442,8 +649,8 @@ def get_dataset(dataset, data_path, feature_type='melspectrogram', batch_size=25
         channel = 1
         im_size = (128, 97)
         num_classes = 8
-        mean = [0.5]
-        std = [0.5]
+        mean = [0.0]
+        std = [1.0]
         
         if feature_type == 'combined':
             dst_train = MedleySolosDataset(root_dir=os.path.join(data_path, 'Medley-solos-DB'), split='train', feature_type='combined')
@@ -453,12 +660,47 @@ def get_dataset(dataset, data_path, feature_type='melspectrogram', batch_size=25
             dst_test = MedleySolosDataset(root_dir=os.path.join(data_path, 'Medley-solos-DB'), split='test', feature_type=feature_type)
         class_names = dst_train.classes
 
+    elif dataset == 'GIANTSTEPS_TEMPO':
+        channel = 1 
+        im_size = (128, int(chunk_duration * 16000 / 512))  
+        num_classes = 3  # slow/medium/fast
+        mean = [0.0]
+        std = [1.0]
+        
+        if feature_type == 'combined':
+            dst_train = GIANTSTEPS_TEMPO(
+                root_dir=os.path.join(data_path, 'GIANTSTEPS_TEMPO'),
+                feature_type='combined',
+                split='train',
+                chunk_duration=chunk_duration
+            )
+            dst_test = GIANTSTEPS_TEMPO(
+                root_dir=os.path.join(data_path, 'GIANTSTEPS_TEMPO'),
+                feature_type='melspectrogram',
+                split='val',
+                chunk_duration=chunk_duration
+            )
+        else:
+            dst_train = GIANTSTEPS_TEMPO(
+                root_dir=os.path.join(data_path, 'GIANTSTEPS_TEMPO'),
+                feature_type=feature_type,
+                split='train',
+                chunk_duration=chunk_duration
+            )
+            dst_test = GIANTSTEPS_TEMPO(
+                root_dir=os.path.join(data_path, 'GIANTSTEPS_TEMPO'),
+                feature_type=feature_type,
+                split='val',
+                chunk_duration=chunk_duration
+            )
+        class_names = ['slow (<120bpm)', 'medium (120-140bpm)', 'fast (>140bpm)']
+
     elif dataset == "EmbeddingsDataset_AUDIO_MNIST":
         channel = 1
         im_size = (128, 128)
         num_classes = 10
-        mean = [0.5]
-        std = [0.5]
+        mean = [0.0]
+        std = [1.0]
 
         # Load GTZAN dataset manually
         dst_train = EmbeddingsDataset(root_dir="data", dataset_name="AUDIO_MNIST", split="train")
@@ -702,15 +944,33 @@ if __name__ == "__main__":
     #     features, label = dataset_subset[i]
     #     print(f"Sample {i}: features shape {features.shape}, label {label}")
 
-    # test medley solos dataset
-    dataset = MedleySolosDataset(
-        root_dir="data/Medley-solos-DB",
-        split="train",
-        feature_type="combined",
-        sample_rate=16000)
-    
-    print('Dataset length:', {len(dataset)})
-    for i in range(5):
-        spec, features, label = dataset[i]
-        print(f"Sample {i}: features shape {features.shape}, label {label}")
+    # Create training dataset (50 songs per class)
+    train_dataset = GIANTSTEPS_TEMPO(
+        root_dir="data/GIANTSTEPS_TEMPO",
+        split='train',
+        chunk_duration=3.0,
+        feature_type='melspectrogram'
+    )
+
+    # Create validation dataset (remaining songs)
+    val_dataset = GIANTSTEPS_TEMPO(
+        root_dir="data/GIANTSTEPS_TEMPO",
+        split='val',
+        chunk_duration=3.0,
+        feature_type='melspectrogram'
+    )
+
+    # Check split information
+    print("Training set info:")
+    print(train_dataset.get_split_info())
+    print(f"Training chunks: {len(train_dataset)}")
+
+    print("\nValidation set info:")
+    print(val_dataset.get_split_info())
+    print(f"Validation chunks: {len(val_dataset)}")
+
+    # Test a sample
+    chunk, label = train_dataset[0]
+    print(f"\nSample chunk shape: {chunk.shape}")
+    print(f"Sample label: {label} ({train_dataset.classes[label]})")
 
