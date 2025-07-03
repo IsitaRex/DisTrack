@@ -109,7 +109,7 @@ class ConvNet(nn.Module):
         return nn.Sequential(*layers), shape_feat
 
 class SimplifiedConvNet(nn.Module):
-    def __init__(self, channel=1, num_classes=10, net_width=128, net_depth=3, im_size=(32, 32), embedding_size=8192):
+    def __init__(self, channel=1, num_classes=10, net_width=128, net_depth=3, im_size=(32, 32), embedding_size=None):
         super(SimplifiedConvNet, self).__init__()
         
         self.im_size = im_size
@@ -121,7 +121,9 @@ class SimplifiedConvNet(nn.Module):
             dummy_output = self.features(dummy_input)
             num_feat = dummy_output.view(dummy_output.size(0), -1).size(1)
         
-        # Add linear layer to standardize embedding size to 8192
+        # Add linear layer to standardize embedding size
+        if embedding_size is None:
+            embedding_size = num_feat
         self.embedding_layer = nn.Linear(num_feat, embedding_size)
         self.classifier = nn.Linear(embedding_size , num_classes)
 
