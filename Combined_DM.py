@@ -23,9 +23,9 @@ def main():
     parser.add_argument('--dataset', type=str, default='AUDIO_MNIST', help='dataset')
     parser.add_argument('--ipc', type=int, default=10, help='image(s) per class')
     parser.add_argument('--num_exp', type=int, default=1, help='the number of experiments')
-    parser.add_argument('--num_eval', type=int, default=3, help='the number of evaluating randomly initialized models')
+    parser.add_argument('--num_eval', type=int, default=1, help='the number of evaluating randomly initialized models')
     parser.add_argument('--epoch_eval_train', type=int, default=100, help='epochs to train a model with synthetic data') # it can be small for speeding up with little performance drop
-    parser.add_argument('--Iteration', type=int, default=500, help='training iterations')
+    parser.add_argument('--Iteration', type=int, default=1000, help='training iterations')
     parser.add_argument('--lr_img', type=float, default=2.0, help='learning rate for updating synthetic images')
     parser.add_argument('--lr_net', type=float, default=0.1, help='learning rate for updating network parameters')
     parser.add_argument('--batch_real', type=int, default=64, help='batch size for real data')
@@ -74,14 +74,14 @@ def main():
 
     def get_dims(dataset):
         if dataset == 'AUDIO_MNIST':
-            return MNIST_MEL_SPEC, MNIST_MFCC, 8192
-        elif dataset == 'UrbanSound8K':
-            return URBANSOUND_MEL_SPEC, URBANSOUND_MFCC, 32768
+            return MNIST_MEL_SPEC, MNIST_MFCC, 8192, 16000
+        elif dataset == 'URBANSOUND8K':
+            return URBANSOUND_MEL_SPEC, URBANSOUND_MFCC, 32768, 48000
         elif dataset == 'MedleySolos':
-            return (128, 97), (40, 97), 24576
+            return (128, 97), (40, 97), 24576, 48000
         else:
             raise ValueError("Unsupported dataset: {}".format(dataset))
-    MEL_SPEC_DIMS, MFCC_DIMS, embedding_size = get_dims(args.dataset)
+    MEL_SPEC_DIMS, MFCC_DIMS, embedding_size, wav_len = get_dims(args.dataset)
 
     transform_spec = torchaudio.transforms.MelSpectrogram(
                         sample_rate=16000,
@@ -97,13 +97,7 @@ def main():
                 ).to(args.device)
     model_eval_pool = [args.model]
 
-    wav_len = 16000
-    if args.dataset == 'AUDIO_MNIST':
-        wav_len = 16000
-    elif args.dataset == 'UrbanSound8K':   
-        wav_len = 32000
-
-    eval_it_pool = np.arange(0, args.Iteration+1, 100).tolist()
+    eval_it_pool = np.arange(0, args.Iteration+1, 500).tolist()
     channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test, testloader = get_dataset(args.dataset, args.data_path, args.feature, args.batch_train)
     accs_all_exps = dict() # record performances of all experiments
     for key in model_eval_pool:
@@ -248,7 +242,6 @@ def main():
                     padding = MEL_SPEC_DIMS[1] - spec_syn.shape[2]
                     spec_syn = nn.functional.pad(spec_syn, (0, padding), mode='constant', value=0)
                 spec_syn = spec_syn.reshape((args.ipc, channel, spec_syn.shape[1], MEL_SPEC_DIMS[1]))
-
 
                 output_real_mfcc = embed_mfcc(mfcc_real).detach()
                 output_real_spec = embed_spec(spec_real).detach()
