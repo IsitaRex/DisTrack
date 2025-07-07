@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from src.models import MLP, ConvNet, SimplifiedConvNet
+from src.models import ConvNet, SimplifiedConvNet
 from src.datasets import TensorDataset
 from transformers import ASTFeatureExtractor, ASTModel, ASTConfig
 
@@ -17,9 +17,7 @@ def get_network(model, channel, num_classes, im_size=(32, 32), embedding_size = 
     torch.random.manual_seed(int(time.time() * 1000) % 100000)
     net_width, net_depth, net_act, net_norm, net_pooling = get_default_convnet_setting()
 
-    if model == 'MLP':
-        net = MLP(channel=channel, num_classes=num_classes)
-    elif model == 'ConvNet':
+    if model == 'ConvNet':
         net = ConvNet(channel=channel, num_classes=num_classes, net_width=net_width, net_depth=net_depth, net_act=net_act, net_norm=net_norm, net_pooling=net_pooling, im_size=im_size)
     elif model == 'AST':
         net = load_AST()
