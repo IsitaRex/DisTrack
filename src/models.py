@@ -5,31 +5,6 @@ import torch.nn.functional as F
 # https://github.com/kuangliu/pytorch-cifar,
 # https://github.com/BIGBALLON/CIFAR-ZOO,
 
-''' Swish activation '''
-class Swish(nn.Module): # Swish(x) = x∗σ(x)
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, input):
-        return input * torch.sigmoid(input)
-
-
-''' MLP '''
-class MLP(nn.Module):
-    def __init__(self, channel, num_classes):
-        super(MLP, self).__init__()
-        self.fc_1 = nn.Linear(28*28*1 if channel==1 else 32*32*3, 128)
-        self.fc_2 = nn.Linear(128, 128)
-        self.fc_3 = nn.Linear(128, num_classes)
-
-    def forward(self, x):
-        out = x.view(x.size(0), -1)
-        out = F.relu(self.fc_1(out))
-        out = F.relu(self.fc_2(out))
-        out = self.fc_3(out)
-        return out
-
-
 
 ''' ConvNet '''
 class ConvNet(nn.Module):
