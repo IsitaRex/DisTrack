@@ -9,13 +9,14 @@ import torch
 import torchaudio
 import torch.nn as nn
 from torchvision.utils import save_image
+from torchaudio.prototype.transforms import ChromaSpectrogram
 from src.datasets import get_dataset
 from src.distillation_losses import DistillationLosses
 from src.utils import get_loops, get_network, evaluate_synset, match_loss, get_time, info_nce_loss, sample_class_data, sample_negative_samples, load_AST_feature_extractor
 
 # Intentar importar wandb de manera segura
 #clear mps cache
-torch.mps.empty_cache()
+# torch.mps.empty_cache()
 
 def main():
 
@@ -31,9 +32,9 @@ def main():
     parser.add_argument('--lr_img', type=float, default=2.0, help='learning rate for updating synthetic images')
     parser.add_argument('--lr_net', type=float, default=0.1, help='learning rate for updating network parameters')
     parser.add_argument('--duration', type=int, default=1, help='Duration of audio in seconds')
-    parser.add_argument('--batch_real', type=int, default=64, help='batch size for real data')
-    parser.add_argument('--batch_train', type=int, default=64, help='batch size for training networks')
-    parser.add_argument('--data_path', type=str, default='data', help='dataset path')
+    parser.add_argument('--batch_real', type=int, default=128, help='batch size for real data')
+    parser.add_argument('--batch_train', type=int, default=128, help='batch size for training networks')
+    parser.add_argument('--data_path', type=str, default='/data/scratch/eez086/DisTrackted/data/', help='dataset path')
     parser.add_argument('--save_path', type=str, default='result', help='path to save results')
     parser.add_argument('--use_wandb', type=bool, default=True, help='Use wandb for logging')
     parser.add_argument('--use_contrastive', type=bool, default=False, help='Use contrastive loss')
@@ -42,7 +43,7 @@ def main():
     args = parser.parse_args()
     args.outer_loop, args.inner_loop = get_loops(args.ipc)
     # args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    args.device = 'mps'
+    args.device = 'cuda'
     USE_WANDB = args.use_wandb
 
     if not os.path.exists(args.data_path):
@@ -82,34 +83,50 @@ def main():
                         melkwargs={'n_fft': 2048, 'hop_length': 512, 'n_mels': 128}
                     ).to(args.device)
         transform_to_spec = transform
+        
+    elif args.feature == 'chromagram':
+        transform = ChromaSpectrogram(
+                sample_rate=16000,
+                n_fft=2048,
+                hop_length=512,
+                n_chroma=12
+            ).to(args.device)
+        transform_to_spec = transform
+        
+    elif args.feature == 'log-melspectrogram':
+        print('ENTERED LOG-MELSPECTROGRAM')
+        transform = torch.nn.Sequential(
+                torchaudio.transforms.MelSpectrogram(
+                        sample_rate=16000,
+                        hop_length=512,
+                        n_fft=2048,
+                        n_mels=128
+                    ),
+                torchaudio.transforms.AmplitudeToDB()
+            ).to(args.device)
+        transform_to_spec = transform
+        
     model_eval_pool = [args.model]
 
     if args.feature == 'AST':
         args.model = "AST"
         args.dataset = f"EmbeddingsDataset_{args.dataset}"
         feature_extractor = load_AST_feature_extractor()
-    
-    def get_dims(dataset):
-        if dataset == 'AUDIO_MNIST':
-            return 8192
-        elif dataset == 'URBANSOUND8K':
-            return 32768
-        elif dataset == 'MedleySolos':
-            return 24576
-        else:
-            raise ValueError("Unsupported dataset: {}".format(dataset))
+
         
-    embedding_size = get_dims(args.dataset)
+    embedding_size = None
 
     wav_len = 16000*args.duration
 
     eval_it_pool = np.arange(0, args.Iteration+1, 500).tolist()
     channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test, testloader = get_dataset(args.dataset, args.data_path, args.feature, batch_size=args.batch_real)
+
     accs_all_exps = dict() # record performances of all experiments
     for key in model_eval_pool:
         accs_all_exps[key] = []
 
     data_save = []
+    
 
 
     for exp in range(args.num_exp):
@@ -129,6 +146,8 @@ def main():
             all_audio = [torch.unsqueeze(dst_train[i][0], dim=0) for i in range(len(dst_train))] 
             labels_all = [dst_train[i][1] for i in range(len(dst_train))]
             torch.save((all_audio, labels_all), file_name_processed_audio)
+        print(len(labels_all), len(all_audio), all_audio[0].shape)
+        
         for i, lab in enumerate(labels_all):
             indices_class[lab].append(i)
         all_audio = torch.cat(all_audio, dim=0).to(args.device)
@@ -163,7 +182,7 @@ def main():
                     for it_eval in range(args.num_eval):
                         net_eval = get_network(model_eval, channel, num_classes, im_size, embedding_size).to(args.device) # get a random model
                         audio_syn_eval, label_syn_eval = copy.deepcopy(audio_syn.detach()), copy.deepcopy(label_syn.detach()) # avoid any unaware modification
-            
+                        print(im_size, dst_train[0][0].shape, audio_syn_eval[0].shape)
                         # transform audio to spectrogram
                         audio_syn_eval = transform_to_spec(audio_syn_eval)
                         # pad to make it im_size shape
@@ -199,15 +218,6 @@ def main():
                     if it == args.Iteration: # record the final results
                         accs_all_exps[model_eval] += accs
 
-                # ''' visualize and save '''
-                # save_name = os.path.join(args.save_path, 'vis_%s_%s_%s_%dipc_exp%d_iter%d.png'%(args.method, args.dataset, args.model, args.ipc, exp, it))
-                # image_syn_vis = copy.deepcopy(image_syn.detach().cpu())
-                # for ch in range(channel):
-                #     image_syn_vis[:, ch] = image_syn_vis[:, ch]  * std[ch] + mean[ch]
-                # image_syn_vis[image_syn_vis<0] = 0.0
-                # image_syn_vis[image_syn_vis>1] = 1.0
-                # save_image(image_syn_vis, save_name, nrow=args.ipc) # Trying normalize = True/False may get better visual effects.
-
 
 
             ''' Train synthetic data '''
@@ -235,34 +245,19 @@ def main():
                 a_syn = audio_syn[c*args.ipc:(c+1)*args.ipc]
                 a_syn = transform(a_syn)
 
-                if args.feature in ['melspectrogram', 'AST', 'mfcc']:
+                if args.feature in ['melspectrogram', 'AST', 'mfcc', 'chromagram', 'log-melspectrogram']:
                     if a_syn.shape[2] < im_size[1]:
                         padding = im_size[1] - a_syn.shape[2]
                         a_syn = nn.functional.pad(a_syn, (0, padding), mode='constant', value=0)
                     a_syn = a_syn.reshape((args.ipc, channel, a_syn.shape[1], im_size[1]))
 
-                    if args.feature in ['melspectrogram', 'mfcc']:
+                    if args.feature in ['melspectrogram', 'mfcc', 'chromagram', 'log-melspectrogram']:
                         output_real = embed(a_real).detach()
                         output_syn = embed(a_syn)
                     elif args.feature == 'AST':
                         output_real = a_real.detach()
                         output_syn = embed(a_syn.squeeze(1)).pooler_output
-
-                # elif args.feature == 'MFCC':
-                #     # compute first order and second order deltas
-                #     # mfcc_first = torchaudio.functional.compute_deltas(a_syn, win_length=3)
-                #     # mfcc_second = torchaudio.functional.compute_deltas(a_syn, win_length=3)
-                #     # # concatenate them
-                #     # a_syn = torch.cat([a_syn, mfcc_first, mfcc_second], dim=1)
-                #     # compute mean accross time
-                #     a_syn = torch.mean(a_syn, dim=2, keepdim=False)
-                #     output_real = a_real.detach()
-                #     output_syn = a_syn
-                
-                # else:
-                #     output_real = embed(a_real).detach()
-                #     output_syn = embed(a_syn)
-
+                        
                 if args.use_contrastive:
                     negative_samples = sample_negative_samples(c, args.ipc, indices_class, all_audio)
                     output_neg = embed(negative_samples)
