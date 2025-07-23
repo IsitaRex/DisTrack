@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 from torchvision.utils import save_image
 from src.datasets import get_dataset
-from src.utils import get_loops, get_network, evaluate_synset, match_loss, get_time, info_nce_loss, sample_class_data, sample_negative_samples
+from src.utils import  get_network, evaluate_synset, get_time, info_nce_loss, sample_class_data, sample_negative_samples
 
 # Intentar importar wandb de manera segura
 #clear mps cache
@@ -18,11 +18,11 @@ torch.mps.empty_cache()
 def main():
 
     parser = argparse.ArgumentParser(description='Parameter Processing')
-    parser.add_argument('--dataset', type=str, default='GTZAN', help='dataset')
+    parser.add_argument('--dataset', type=str, default='AUDIO_MNIST', help='dataset')
     parser.add_argument('--model', type=str, default='SimplifiedConvNet', help='model')
     parser.add_argument('--ipc', type=int, default=10, help='image(s) per class')
     parser.add_argument('--num_exp', type=int, default=1, help='the number of experiments')
-    parser.add_argument('--num_eval', type=int, default=1, help='the number of evaluating randomly initialized models')
+    parser.add_argument('--num_eval', type=int, default=10, help='the number of evaluating randomly initialized models')
     parser.add_argument('--epoch_eval_train', type=int, default=100, help='epochs to train a model with synthetic data') # it can be small for speeding up with little performance drop
     parser.add_argument('--Iteration', type=int, default=1000, help='training iterations')
     parser.add_argument('--lr_img', type=float, default=2.0, help='learning rate for updating synthetic images')
@@ -36,7 +36,7 @@ def main():
     parser.add_argument('--contrastive_weight', type=float, default=0.2, help='Weight for contrastive loss')
 
     args = parser.parse_args()
-    args.outer_loop, args.inner_loop = get_loops(args.ipc)
+    args.method = 'DM'
     # args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
     args.device = 'mps'
     USE_WANDB = args.use_wandb
