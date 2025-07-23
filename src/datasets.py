@@ -4,20 +4,14 @@ import torchaudio
 import pandas as pd
 import numpy as np
 from torch.utils.data import Dataset
-from torchvision import datasets, transforms
 from torchaudio.prototype.transforms import ChromaSpectrogram
-from src.embedder import Embedder
 from abc import abstractmethod
-from pathlib import Path
-import pickle
-import random
 from sklearn.model_selection import train_test_split
 
 MNIST_MEL_SPEC = (128, 33)
 MNIST_MFCC = (13, 33)
 URBANSOUND_MEL_SPEC = (128, 128)
 URBANSOUND_MFCC = (40, 128)
-
 
 class AudioDataset(Dataset):
     def __init__(self, root_dir: str, split: str = "train", sample_rate: int = 16000, feature_type: str = "melspectrogram", n_mels: int = 128, n_mfcc: int = 40, hop_length: int = 512):
@@ -249,7 +243,6 @@ class UrbanSound8KDataset(AudioDataset):
             labels.append(label_map[row['class']])
         
         return classes, label_map, file_paths, labels
-
 class MedleySolosDataset(AudioDataset):
     def _load_dataset(self):
         """Load Medley-solos dataset metadata and prepare file paths/labels."""
@@ -277,7 +270,6 @@ class MedleySolosDataset(AudioDataset):
             labels.append(row['instrument_id'])
         
         return classes, label_map, file_paths, labels
-
 class TinySOL(AudioDataset):
     def __init__(self, root_dir: str, split: str = "train", sample_rate: int = 16000, 
                  feature_type: str = "melspectrogram", n_mels: int = 128, n_mfcc: int = 40, 
@@ -464,8 +456,6 @@ def get_dataset(dataset, data_path, feature_type='melspectrogram', batch_size=25
     
     testloader = torch.utils.data.DataLoader(dst_test, batch_size=batch_size, shuffle=False, num_workers=0)
     return channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test, testloader
-
-
 class TensorDataset(Dataset):
     def __init__(self, images, labels): # images: n x c x h x w tensor
         self.images = images.detach().float()
@@ -477,8 +467,6 @@ class TensorDataset(Dataset):
     def __len__(self):
         return self.images.shape[0]
     
-
-
 def load_synthetic_data(path, device='cpu'):
     """Load synthetic prototypes"""
     data = torch.load(path, weights_only=False)
@@ -502,7 +490,6 @@ def load_real_data(dataset_class, root_dir, split, model, device='cpu', max_samp
         real_labels.append(label)
         
     return np.concatenate(real_embs, axis=0), np.array(real_labels)
-
 
 if __name__ == "__main__":
 

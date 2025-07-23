@@ -20,9 +20,7 @@ def main():
     parser = argparse.ArgumentParser(description='Parameter Processing')
     parser.add_argument('--dataset', type=str, default='GTZAN', help='dataset')
     parser.add_argument('--model', type=str, default='SimplifiedConvNet', help='model')
-    parser.add_argument('--method', type=str, default='DM', help='DM/GM/TM')
     parser.add_argument('--ipc', type=int, default=10, help='image(s) per class')
-    # parser.add_argument('--eval_mode', type=str, default='SS', help='eval_mode') # S: the same to training model, M: multi architectures,  W: net width, D: net depth, A: activation function, P: pooling layer, N: normalization layer,
     parser.add_argument('--num_exp', type=int, default=1, help='the number of experiments')
     parser.add_argument('--num_eval', type=int, default=1, help='the number of evaluating randomly initialized models')
     parser.add_argument('--epoch_eval_train', type=int, default=100, help='epochs to train a model with synthetic data') # it can be small for speeding up with little performance drop
@@ -171,52 +169,25 @@ def main():
             loss_avg = 0
 
             ''' update synthetic data '''
-            if 'BN' not in args.model: # for ConvNet
-                loss = torch.tensor(0.0).to(args.device)
-                for c in range(num_classes):
-                    img_real = sample_class_data(c, args.batch_real, indices_class, images_all)
-                    
-                    if args.use_contrastive:
-                        img_real = sample_class_data(c, args.ipc, indices_class, images_all)
-                    
-                    img_syn = image_syn[c*args.ipc:(c+1)*args.ipc].reshape((args.ipc, channel, im_size[0], im_size[1]))
-                    
-                    if args.model == "AST":
-                        output_real = img_real.detach()
-                        output_syn = embed(img_syn.squeeze(1)).pooler_output
-                    else:
-                        output_real = embed(img_real).detach()
-                        output_syn = embed(img_syn)
-
-                    if args.use_contrastive:
-                        negative_samples = sample_negative_samples(c, args.ipc, indices_class, images_all)
-                        output_neg = embed(negative_samples)
-                        loss += args.contrastive_weight*info_nce_loss(output_real, output_syn, output_neg, args.ipc)
-                        loss += (1 - args.contrastive_weight)*torch.sum((torch.mean(output_real, dim=0) - torch.mean(output_syn, dim=0))**2)
-                    else:
-                        loss += torch.sum((torch.mean(output_real, dim=0) - torch.mean(output_syn, dim=0))**2)
-
-
-            else: # for ConvNetBN
-                images_real_all = []
-                images_syn_all = []
-                loss = torch.tensor(0.0).to(args.device)
-                for c in range(num_classes):
-                    img_real = sample_class_data(c, args.batch_real, indices_class, images_all)
-                    img_syn = image_syn[c*args.ipc:(c+1)*args.ipc].reshape((args.ipc, channel, im_size[0], im_size[1]))
+            images_real_all = []
+            images_syn_all = []
+            loss = torch.tensor(0.0).to(args.device)
+            for c in range(num_classes):
+                img_real = sample_class_data(c, args.batch_real, indices_class, images_all)
+                img_syn = image_syn[c*args.ipc:(c+1)*args.ipc].reshape((args.ipc, channel, im_size[0], im_size[1]))
 
 
 
-                    images_real_all.append(img_real)
-                    images_syn_all.append(img_syn)
+                images_real_all.append(img_real)
+                images_syn_all.append(img_syn)
 
-                images_real_all = torch.cat(images_real_all, dim=0)
-                images_syn_all = torch.cat(images_syn_all, dim=0)
-                
-                output_real = embed(images_real_all).detach()
-                output_syn = embed(images_syn_all)
+            images_real_all = torch.cat(images_real_all, dim=0)
+            images_syn_all = torch.cat(images_syn_all, dim=0)
+            
+            output_real = embed(images_real_all).detach()
+            output_syn = embed(images_syn_all)
 
-                loss += torch.sum((torch.mean(output_real.reshape(num_classes, args.batch_real, -1), dim=1) - torch.mean(output_syn.reshape(num_classes, args.ipc, -1), dim=1))**2)
+            loss += torch.sum((torch.mean(output_real.reshape(num_classes, args.batch_real, -1), dim=1) - torch.mean(output_syn.reshape(num_classes, args.ipc, -1), dim=1))**2)
 
             optimizer_img.zero_grad()
             loss.backward()

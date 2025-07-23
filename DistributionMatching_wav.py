@@ -12,7 +12,7 @@ from torchvision.utils import save_image
 from torchaudio.prototype.transforms import ChromaSpectrogram
 from src.datasets import get_dataset
 from src.distillation_losses import DistillationLosses
-from src.utils import get_loops, get_network, evaluate_synset, match_loss, get_time, info_nce_loss, sample_class_data, sample_negative_samples, load_AST_feature_extractor
+from src.utils import get_loops, get_network, evaluate_synset, match_loss, get_time, info_nce_loss, sample_class_data, sample_negative_samples
 
 # Intentar importar wandb de manera segura
 #clear mps cache
@@ -23,7 +23,7 @@ def main():
     parser = argparse.ArgumentParser(description='Parameter Processing')
     parser.add_argument('--dataset', type=str, default='AUDIO_MNIST', help='dataset')
     parser.add_argument('--model', type=str, default='SimplifiedConvNet', help='model')
-    parser.add_argument('--feature', type=str, default='melspectrogram', help='melspectrogram/mfcc/AST/')
+    parser.add_argument('--feature', type=str, default='melspectrogram', help='melspectrogram/mfcc/log-melspectrogram/chromagram')
     parser.add_argument('--ipc', type=int, default=10, help='image(s) per class')
     parser.add_argument('--num_exp', type=int, default=1, help='the number of experiments')
     parser.add_argument('--num_eval', type=int, default=10, help='the number of evaluating randomly initialized models')
@@ -107,12 +107,6 @@ def main():
         transform_to_spec = transform
         
     model_eval_pool = [args.model]
-
-    if args.feature == 'AST':
-        args.model = "AST"
-        args.dataset = f"EmbeddingsDataset_{args.dataset}"
-        feature_extractor = load_AST_feature_extractor()
-
         
     embedding_size = None
 
@@ -245,7 +239,7 @@ def main():
                 a_syn = audio_syn[c*args.ipc:(c+1)*args.ipc]
                 a_syn = transform(a_syn)
 
-                if args.feature in ['melspectrogram', 'AST', 'mfcc', 'chromagram', 'log-melspectrogram']:
+                if args.feature in ['melspectrogram','mfcc', 'chromagram', 'log-melspectrogram']:
                     if a_syn.shape[2] < im_size[1]:
                         padding = im_size[1] - a_syn.shape[2]
                         a_syn = nn.functional.pad(a_syn, (0, padding), mode='constant', value=0)
@@ -254,9 +248,6 @@ def main():
                     if args.feature in ['melspectrogram', 'mfcc', 'chromagram', 'log-melspectrogram']:
                         output_real = embed(a_real).detach()
                         output_syn = embed(a_syn)
-                    elif args.feature == 'AST':
-                        output_real = a_real.detach()
-                        output_syn = embed(a_syn.squeeze(1)).pooler_output
                         
                 if args.use_contrastive:
                     negative_samples = sample_negative_samples(c, args.ipc, indices_class, all_audio)
