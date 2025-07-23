@@ -75,19 +75,4 @@ python DistributionMatching_wav.py --dataset AUDIO_MNIST --feature_type melspect
 # Sample Sounds 🎧📢
 
 ## Audio MNIST  🔢
-<audio controls>
-  <source src="synthetic_sounds/sample_5_0.wav" type="audio/wav">
-  Your browser does not support the audio element.
-</audio>
-
-## UrbanSound8K
-<audio controls>
-  <source src="path/to/urbansound8k_sample.wav" type="audio/wav">
-  Your browser does not support the audio element.
-</audio>
-
-## GTZAN
-<audio controls>
-  <source src="path/to/gtzan_sample.wav" type="audio/wav">
-  Your browser does not support the audio element.
-</audio>
+https://github.com/user-attachments/assets/2b35c000-6090-490c-b80f-8a1df760953f
