@@ -5,3 +5,4 @@ result/
 synthetic_sounds/
 cache/
 .DS_Store
+.vscode/
