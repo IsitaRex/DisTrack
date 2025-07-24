@@ -51,63 +51,48 @@ pip install -r requirements.txt
 To replicate the exact results from the paper, use the following configurations:
 
 ### Spectral Domain Distillation
+To run experiments to generate synthetic data in Spectral Domain run
+
 ```bash
 # AudioMNIST - Mel-spectrograms
-python DistributionMatching.py --dataset AUDIO_MNIST --feature_type melspectrogram --ipc 1
-python DistributionMatching.py --dataset AUDIO_MNIST --feature_type melspectrogram --ipc 10
-python DistributionMatching.py --dataset AUDIO_MNIST --feature_type melspectrogram --ipc 50
+python DistributionMatching.py --dataset AUDIO_MNIST --ipc 1
+python DistributionMatching.py --dataset AUDIO_MNIST --ipc 10
+python DistributionMatching.py --dataset AUDIO_MNIST --ipc 50
 ```
 
 ```bash
 # UrbanSound8K - Mel-spectrograms
-python DistributionMatching.py --dataset URBANSOUND8K --feature_type melspectrogram --ipc 1
-python DistributionMatching.py --dataset URBANSOUND8K --feature_type melspectrogram --ipc 10
-python DistributionMatching.py --dataset URBANSOUND8K --feature_type melspectrogram --ipc 50
+python DistributionMatching.py --dataset URBANSOUND8K --ipc 1
+python DistributionMatching.py --dataset URBANSOUND8K --ipc 10
+python DistributionMatching.py --dataset URBANSOUND8K --ipc 50
 ```
 
 ```bash
 # Medley-solos-DB - Mel-spectrograms
-python DistributionMatching.py --dataset MEDLEY_SOLOS --feature_type melspectrogram --ipc 1
-python DistributionMatching.py --dataset MEDLEY_SOLOS --feature_type melspectrogram --ipc 10
-python DistributionMatching.py --dataset MEDLEY_SOLOS --feature_type melspectrogram --ipc 50
+python DistributionMatching.py --dataset MedleySolos --ipc 1
+python DistributionMatching.py --dataset MedleySolos --ipc 10
+python DistributionMatching.py --dataset MedleySolos --ipc 50
 ```
 
 ```bash
-# TinySOL - Mel-spectrograms (Pitch Detection)
-python DistributionMatching.py --dataset TINYSOL --feature_type melspectrogram --ipc 1
-python DistributionMatching.py --dataset TINYSOL --feature_type melspectrogram --ipc 10
-python DistributionMatching.py --dataset TINYSOL --feature_type melspectrogram --ipc 50
-```
-
-```bash
-# TinySOL - Chromagram (Pitch Detection)
-python DistributionMatching.py --dataset TINYSOL --feature_type chromagram --ipc 1
-python DistributionMatching.py --dataset TINYSOL --feature_type chromagram --ipc 10
-python DistributionMatching.py --dataset TINYSOL --feature_type chromagram --ipc 50
-```
-
-## Dataset Distillation in Spectral Domain
-To run experiments to generate synthetic data in Spectral Domain run
-```bash
-python DistributionMatching.py --dataset AUDIO_MNIST --feature_type melspectrogram --ipc 10
-```
-
-## Dataset Distillation in Waveform Domain
-To run experiments to generate synthetic data in Spectral Domain run
-```bash
-python DistributionMatching_wav.py --dataset AUDIO_MNIST --feature_type melspectrogram --ipc 10
+# TinySOL - Mel-spectrograms
+python DistributionMatching.py --dataset TinySOL --ipc 1
+python DistributionMatching.py --dataset TinySOL --ipc 10
+python DistributionMatching.py --dataset TinySOL --ipc 50
 ```
 
 ### Waveform Domain Distillation
+To run experiments to generate synthetic data in Waveform Domain run
+
 ```bash
-# AudioMNIST - Waveform
+# AudioMNIST - Waveform (Mel-Spectrogram latent representation)
 python DistributionMatching_wav.py --dataset AUDIO_MNIST --feature_type melspectrogram --ipc 1
 python DistributionMatching_wav.py --dataset AUDIO_MNIST --feature_type melspectrogram --ipc 10
 python DistributionMatching_wav.py --dataset AUDIO_MNIST --feature_type melspectrogram --ipc 50
 ```
 
 ```bash
-# UrbanSound8K - Waveform
+# UrbanSound8K - Waveform (Mel-Spectrogram latent representation)
 python DistributionMatching_wav.py --dataset URBANSOUND8K --feature_type melspectrogram --ipc 1
 python DistributionMatching_wav.py --dataset URBANSOUND8K --feature_type melspectrogram --ipc 10
 python DistributionMatching_wav.py --dataset URBANSOUND8K --feature_type melspectrogram --ipc 50
@@ -115,39 +100,33 @@ python DistributionMatching_wav.py --dataset URBANSOUND8K --feature_type melspec
 
 
 ```bash
-# Medley-solos-DB - Waveform
-python DistributionMatching_wav.py --dataset MEDLEY_SOLOS --feature_type melspectrogram --ipc 1
-python DistributionMatching_wav.py --dataset MEDLEY_SOLOS --feature_type melspectrogram --ipc 10
-python DistributionMatching_wav.py --dataset MEDLEY_SOLOS --feature_type melspectrogram --ipc 50
+# Medley-solos-DB - Waveform (Mel-Spectrogram latent representation)
+python DistributionMatching_wav.py --dataset MedleySolos --feature_type melspectrogram --ipc 1
+python DistributionMatching_wav.py --dataset MedleySolos --feature_type melspectrogram --ipc 10
+python DistributionMatching_wav.py --dataset MedleySolos --feature_type melspectrogram --ipc 50
 ```
 
 ```bash
-# TinySOL - Waveform
-python DistributionMatching_wav.py --dataset TINYSOL --feature_type melspectrogram --ipc 1
-python DistributionMatching_wav.py --dataset TINYSOL --feature_type melspectrogram --ipc 10
-python DistributionMatching_wav.py --dataset TINYSOL --feature_type melspectrogram --ipc 50
+# TinySOL - Waveform (Mel-Spectrogram latent representation)
+python DistributionMatching_wav.py --dataset TinySOL --feature_type melspectrogram --ipc 1
+python DistributionMatching_wav.py --dataset TinySOL --feature_type melspectrogram --ipc 10
+python DistributionMatching_wav.py --dataset TinySOL --feature_type melspectrogram --ipc 50
 ```
 
+
+```bash
+# TinySOL - Waveform (Chromagram latent representation)
+python DistributionMatching_wav.py --dataset TinySOL --feature_type chromagram --ipc 1
+python DistributionMatching_wav.py --dataset TinySOL --feature_type chromagram --ipc 10
+python DistributionMatching_wav.py --dataset TinySOL --feature_type chromagram --ipc 50
+```
 ## Parameter Explanations
 
 | Parameter | Values | Description |
 |-----------|---------|-------------|
-| `--dataset` | `AUDIO_MNIST`, `URBANSOUND8K`,  `MEDLEY_SOLOS`, `TINYSOL` | Dataset to use for distillation |
-| `--feature_type` | `melspectrogram`, `mfcc`, `chromagram` | Audio feature representation |
+| `--dataset` | `AUDIO_MNIST`, `URBANSOUND8K`,  `MedleySolos`, `TinySOL` | Dataset to use for distillation |
+| `--feature_type` | `melspectrogram`, `chromagram` | Audio feature representation |
 | `--ipc` | `1`, `10`, `50` | Images (tracks) per class in synthetic dataset |
-
-## Dataset Distillation in Spectral Domain
-To run experiments to generate synthetic data in Spectral Domain run
-
-```bash
-python DistributionMatching.py --dataset AUDIO_MNIST --feature_type melspectrogram --ipc 10
-```
-
-## Dataset Distillation in Waveform Domain
-To run experiments to generate synthetic data in Waveform Domain run
-```bash
-python DistributionMatching_wav.py --dataset AUDIO_MNIST --feature_type melspectrogram --ipc 10
-```
 
 
 # Sample Sounds 🎧📢
