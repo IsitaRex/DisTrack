@@ -44,6 +44,48 @@ cd DisTrack
 pip install -r requirements.txt
 ```
 
+# Experiments Configuration 🧪
+
+## Replicating Paper Results
+
+To replicate the exact results from the paper, use the following configurations:
+
+### Spectral Domain Distillation
+```bash
+# AudioMNIST - Mel-spectrograms
+python DistributionMatching.py --dataset AUDIO_MNIST --feature_type melspectrogram --ipc 1
+python DistributionMatching.py --dataset AUDIO_MNIST --feature_type melspectrogram --ipc 10
+python DistributionMatching.py --dataset AUDIO_MNIST --feature_type melspectrogram --ipc 50
+```
+
+```bash
+# UrbanSound8K - Mel-spectrograms
+python DistributionMatching.py --dataset URBANSOUND8K --feature_type melspectrogram --ipc 1
+python DistributionMatching.py --dataset URBANSOUND8K --feature_type melspectrogram --ipc 10
+python DistributionMatching.py --dataset URBANSOUND8K --feature_type melspectrogram --ipc 50
+```
+
+```bash
+# Medley-solos-DB - Mel-spectrograms
+python DistributionMatching.py --dataset MEDLEY_SOLOS --feature_type melspectrogram --ipc 1
+python DistributionMatching.py --dataset MEDLEY_SOLOS --feature_type melspectrogram --ipc 10
+python DistributionMatching.py --dataset MEDLEY_SOLOS --feature_type melspectrogram --ipc 50
+```
+
+```bash
+# TinySOL - Mel-spectrograms (Pitch Detection)
+python DistributionMatching.py --dataset TINYSOL --feature_type melspectrogram --ipc 1
+python DistributionMatching.py --dataset TINYSOL --feature_type melspectrogram --ipc 10
+python DistributionMatching.py --dataset TINYSOL --feature_type melspectrogram --ipc 50
+```
+
+```bash
+# TinySOL - Chromagram (Pitch Detection)
+python DistributionMatching.py --dataset TINYSOL --feature_type chromagram --ipc 1
+python DistributionMatching.py --dataset TINYSOL --feature_type chromagram --ipc 10
+python DistributionMatching.py --dataset TINYSOL --feature_type chromagram --ipc 50
+```
+
 ## Dataset Distillation in Spectral Domain
 To run experiments to generate synthetic data in Spectral Domain run
 ```bash
@@ -55,21 +97,57 @@ To run experiments to generate synthetic data in Spectral Domain run
 ```bash
 python DistributionMatching_wav.py --dataset AUDIO_MNIST --feature_type melspectrogram --ipc 10
 ```
-# Results
 
-## Distribution Matching
+### Waveform Domain Distillation
+```bash
+# AudioMNIST - Waveform
+python DistributionMatching_wav.py --dataset AUDIO_MNIST --feature_type melspectrogram --ipc 1
+python DistributionMatching_wav.py --dataset AUDIO_MNIST --feature_type melspectrogram --ipc 10
+python DistributionMatching_wav.py --dataset AUDIO_MNIST --feature_type melspectrogram --ipc 50
+```
 
-### Training random CNN
-|  |AUDIO MNIST | UrbanSound8K | GTZAN | 
- :-: | :-: | :-: | :-: |
-| 1 samples/cls  |0.4|0.25 | 0.19|
-| 10 samples/cls |0.6 | 0.31 | 0.4| 
-### Prototype networks using random CNN as latent space
-|  |AUDIO MNIST | UrbanSound8K | GTZAN | 
- :-: | :-: | :-: | :-: |
-| Mean of Clusters |0.59| ||
-| 1 samples/cls  |0.59| | |
-| 10 samples/cls |0.48|  | | 
+```bash
+# UrbanSound8K - Waveform
+python DistributionMatching_wav.py --dataset URBANSOUND8K --feature_type melspectrogram --ipc 1
+python DistributionMatching_wav.py --dataset URBANSOUND8K --feature_type melspectrogram --ipc 10
+python DistributionMatching_wav.py --dataset URBANSOUND8K --feature_type melspectrogram --ipc 50
+```
+
+
+```bash
+# Medley-solos-DB - Waveform
+python DistributionMatching_wav.py --dataset MEDLEY_SOLOS --feature_type melspectrogram --ipc 1
+python DistributionMatching_wav.py --dataset MEDLEY_SOLOS --feature_type melspectrogram --ipc 10
+python DistributionMatching_wav.py --dataset MEDLEY_SOLOS --feature_type melspectrogram --ipc 50
+```
+
+```bash
+# TinySOL - Waveform
+python DistributionMatching_wav.py --dataset TINYSOL --feature_type melspectrogram --ipc 1
+python DistributionMatching_wav.py --dataset TINYSOL --feature_type melspectrogram --ipc 10
+python DistributionMatching_wav.py --dataset TINYSOL --feature_type melspectrogram --ipc 50
+```
+
+## Parameter Explanations
+
+| Parameter | Values | Description |
+|-----------|---------|-------------|
+| `--dataset` | `AUDIO_MNIST`, `URBANSOUND8K`,  `MEDLEY_SOLOS`, `TINYSOL` | Dataset to use for distillation |
+| `--feature_type` | `melspectrogram`, `mfcc`, `chromagram` | Audio feature representation |
+| `--ipc` | `1`, `10`, `50` | Images (tracks) per class in synthetic dataset |
+
+## Dataset Distillation in Spectral Domain
+To run experiments to generate synthetic data in Spectral Domain run
+
+```bash
+python DistributionMatching.py --dataset AUDIO_MNIST --feature_type melspectrogram --ipc 10
+```
+
+## Dataset Distillation in Waveform Domain
+To run experiments to generate synthetic data in Waveform Domain run
+```bash
+python DistributionMatching_wav.py --dataset AUDIO_MNIST --feature_type melspectrogram --ipc 10
+```
 
 
 # Sample Sounds 🎧📢
