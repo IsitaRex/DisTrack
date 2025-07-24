@@ -1,6 +1,13 @@
 # DisTrack 🎧📢
 Data distillation compresses the knowledge of large datasets into smaller, synthetic datasets that retain essential information to train models able to carry out downstream tasks. While extensively studied in the image domain, this technique remains underexplored for audio. In this work, we demonstrate that dataset distillation via distribution matching applied to image-like audio representations (e.g., mel-spectrograms, chromagrams), is capable of preserving key acoustic features such as phonetic structure, timbre, and pitch. Furthermore, we show that distillation can generate not only image-like representations but also raw audio tracks (waveform samples). We also investigate temporal condensation, revealing a trade-off between the number of synthetic tracks per class and their duration: models trained on more brief synthetic tracks (e.g., 1-second tracks) can match the performance of those trained on fewer but longer samples (e.g., 3-second tracks), suggesting that increasing the quantity of shorter tracks can achieve performance comparable to fewer longer ones. By enabling models to learn from synthetic audio representations, this work expands the applicability of data distillation in audio AI. This field holds unique potential to address challenges like data privacy by decoupling model training from proprietary or sensitive source material.
 
+# Acknowledgments
+
+This work builds upon the distribution matching framework from [DatasetCondensation](https://github.com/VICO-UoE/DatasetCondensation). We adapted and extended their implementation for audio data distillation via distribution matching.
+
+**Original Repository**: [VICO-UoE/DatasetCondensation](https://github.com/VICO-UoE/DatasetCondensation)
+
+
 # Tasks and Datasets
 
 ## **Spoken Digit Classification** 1️⃣🗣️
