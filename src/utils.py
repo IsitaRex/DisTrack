@@ -6,7 +6,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from src.models import ConvNet, SimplifiedConvNet
 from src.datasets import TensorDataset
-from transformers import ASTFeatureExtractor, ASTModel, ASTConfig
 
 def get_default_convnet_setting():
     net_width, net_depth, net_act, net_norm, net_pooling = 128, 3, 'relu', 'instancenorm', 'avgpooling'
