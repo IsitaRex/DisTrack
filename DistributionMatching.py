@@ -11,10 +11,6 @@ from torchvision.utils import save_image
 from src.datasets import get_dataset
 from src.utils import  get_network, evaluate_synset, get_time, info_nce_loss, sample_class_data, sample_negative_samples
 
-# Intentar importar wandb de manera segura
-#clear mps cache
-torch.mps.empty_cache()
-
 def main():
 
     parser = argparse.ArgumentParser(description='Parameter Processing')
@@ -37,8 +33,8 @@ def main():
 
     args = parser.parse_args()
     args.method = 'DM'
-    # args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    args.device = 'mps'
+    args.device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
+
     USE_WANDB = args.use_wandb
 
     if not os.path.exists(args.data_path):

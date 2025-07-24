@@ -12,11 +12,8 @@ from torchvision.utils import save_image
 from torchaudio.prototype.transforms import ChromaSpectrogram
 from src.datasets import get_dataset
 from src.distillation_losses import DistillationLosses
-from src.utils import get_loops, get_network, evaluate_synset, match_loss, get_time, info_nce_loss, sample_class_data, sample_negative_samples
+from src.utils import  get_network, evaluate_synset, get_time, info_nce_loss, sample_class_data, sample_negative_samples
 
-# Intentar importar wandb de manera segura
-#clear mps cache
-# torch.mps.empty_cache()
 
 def main():
 
@@ -34,16 +31,14 @@ def main():
     parser.add_argument('--duration', type=int, default=1, help='Duration of audio in seconds')
     parser.add_argument('--batch_real', type=int, default=128, help='batch size for real data')
     parser.add_argument('--batch_train', type=int, default=128, help='batch size for training networks')
-    parser.add_argument('--data_path', type=str, default='/data/scratch/eez086/DisTrackted/data/', help='dataset path')
+    parser.add_argument('--data_path', type=str, default='data/', help='dataset path')
     parser.add_argument('--save_path', type=str, default='result', help='path to save results')
     parser.add_argument('--use_wandb', type=bool, default=True, help='Use wandb for logging')
     parser.add_argument('--use_contrastive', type=bool, default=False, help='Use contrastive loss')
     parser.add_argument('--contrastive_weight', type=float, default=0.2, help='Weight for contrastive loss')
 
     args = parser.parse_args()
-    args.outer_loop, args.inner_loop = get_loops(args.ipc)
-    # args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    args.device = 'cuda'
+    args.device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
     USE_WANDB = args.use_wandb
 
     if not os.path.exists(args.data_path):
